@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CinemaReservation.Api/CinemaReservation.Api.csproj" />
+  <Project Path="CinemaReservation.Tests/CinemaReservation.Tests.csproj" />
+</Solution>
