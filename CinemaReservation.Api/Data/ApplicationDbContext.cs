@@ -1,10 +1,12 @@
 using CinemaReservation.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+
 
 namespace CinemaReservation.Api.Data;
 
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-    : DbContext(options)
+    : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<Movie> Movies => Set<Movie>();
 
