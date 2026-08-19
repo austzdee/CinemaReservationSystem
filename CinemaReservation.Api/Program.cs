@@ -102,3 +102,6 @@ await IdentitySeeder.SeedAsync(
     app.Configuration);
 
 app.Run();
+
+// Expose the generated Program type to the integration test project.
+public partial class Program;
