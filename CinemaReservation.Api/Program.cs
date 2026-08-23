@@ -42,8 +42,10 @@ builder.Services
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
+// Register movie catalogue operations behind the application service boundary.
+builder.Services.AddScoped<IMovieService, MovieService>();
 
-    // Generate JWT access tokens for authenticated users.
+// Generate JWT access tokens for authenticated users.
 builder.Services.AddScoped<ITokenService, TokenService>();
 
 var jwtKey = builder.Configuration["Jwt:Key"]

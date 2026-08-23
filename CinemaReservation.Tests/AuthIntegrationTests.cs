@@ -8,6 +8,7 @@ namespace CinemaReservation.Tests;
 
 // Exercises authentication and authorization through the real ASP.NET Core
 // request pipeline to validate middleware, Identity, JWTs, and role enforcement together.
+[Collection("Integration")]
 public class AuthIntegrationTests
     : IClassFixture<CustomWebApplicationFactory>
 {
