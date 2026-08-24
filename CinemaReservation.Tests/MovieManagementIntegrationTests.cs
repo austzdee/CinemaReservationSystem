@@ -9,8 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace CinemaReservation.Tests;
 
-// Validates movie-management authorization and creation behaviour through
-// the real API pipeline against the isolated PostgreSQL test database.
+// Validates movie-management authorization, creation, and public retrieval
+// through the real API pipeline against the isolated PostgreSQL test database.
 [Collection("Integration")]
 public class MovieManagementIntegrationTests
     : IClassFixture<CustomWebApplicationFactory>
@@ -35,7 +35,7 @@ public class MovieManagementIntegrationTests
     {
         var response = await _client.PostAsJsonAsync(
             "/api/movies",
-            CreateValidMovieRequest());
+            CreateAuthorizationTestRequest());
 
         Assert.Equal(
             HttpStatusCode.Unauthorized,
@@ -74,7 +74,7 @@ public class MovieManagementIntegrationTests
                 "/api/movies")
             {
                 Content = JsonContent.Create(
-                    CreateValidMovieRequest())
+                   CreateAuthorizationTestRequest())
             };
 
         request.Headers.Authorization =
@@ -137,8 +137,17 @@ public class MovieManagementIntegrationTests
             await response.Content
                 .ReadFromJsonAsync<JsonElement>();
 
-        Assert.True(
-            movie.GetProperty("id").GetInt32() > 0);
+        var movieId =
+     movie.GetProperty("id").GetInt32();
+
+        Assert.True(movieId > 0);
+
+        Assert.NotNull(response.Headers.Location);
+
+        Assert.EndsWith(
+            $"/api/movies/{movieId}",
+            response.Headers.Location.ToString(),
+            StringComparison.OrdinalIgnoreCase);
 
         Assert.True(
             movie.GetProperty("isActive").GetBoolean());
@@ -189,6 +198,109 @@ public class MovieManagementIntegrationTests
 
         Assert.Equal(
             HttpStatusCode.BadRequest,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMovieById_WithActiveMovie_ReturnsOk()
+    {
+        int movieId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var genre = new Genre
+            {
+                Name = $"Drama-{Guid.NewGuid():N}"
+            };
+
+            var movie = new Movie
+            {
+                Title = "Integration Test Movie",
+                Description = "Movie used to verify public retrieval.",
+                DurationMinutes = 120,
+                IsActive = true
+            };
+
+            movie.MovieGenres.Add(new MovieGenre
+            {
+                Movie = movie,
+                Genre = genre
+            });
+
+            context.Movies.Add(movie);
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+        }
+
+        var response = await _client.GetAsync($"/api/movies/{movieId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        var root = document.RootElement;
+
+        Assert.Equal(movieId, root.GetProperty("id").GetInt32());
+        Assert.Equal(
+            "Integration Test Movie",
+            root.GetProperty("title").GetString());
+        Assert.True(root.GetProperty("isActive").GetBoolean());
+
+        var genres = root.GetProperty("genres");
+
+        Assert.Equal(1, genres.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task GetMovieById_WithUnknownMovie_ReturnsNotFound()
+    {
+        var response =
+            await _client.GetAsync(
+                $"/api/movies/{int.MaxValue}");
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMovieById_WithArchivedMovie_ReturnsNotFound()
+    {
+        int movieId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var movie = new Movie
+            {
+                Title =
+                    $"Archived Movie {Guid.NewGuid():N}",
+                Description =
+                    "Archived movies must not be publicly accessible.",
+                DurationMinutes = 105,
+                IsActive = false
+            };
+
+            context.Movies.Add(movie);
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+        }
+
+        var response =
+            await _client.GetAsync(
+                $"/api/movies/{movieId}");
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
             response.StatusCode);
     }
 
@@ -260,7 +372,7 @@ public class MovieManagementIntegrationTests
                 "Login response did not contain an access token.");
     }
 
-    private static object CreateValidMovieRequest()
+    private static object CreateAuthorizationTestRequest()
     {
         return new
         {

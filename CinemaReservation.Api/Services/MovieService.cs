@@ -24,11 +24,31 @@ public class MovieService : IMovieService
         throw new NotImplementedException();
     }
 
-    public Task<MovieResponse?> GetMovieByIdAsync(int id)
+    public async Task<MovieResponse?> GetMovieByIdAsync(int id)
     {
-        // Public movie retrieval will exclude archived records and return
-        // genre data as part of the API response model.
-        throw new NotImplementedException();
+        return await _context.Movies
+            .AsNoTracking()
+            .Where(movie => movie.Id == id && movie.IsActive)
+            .Select(movie => new MovieResponse
+            {
+                Id = movie.Id,
+                Title = movie.Title,
+                Description = movie.Description,
+                PosterUrl = movie.PosterUrl,
+                DurationMinutes = movie.DurationMinutes,
+                IsActive = movie.IsActive,
+                CreatedAt = movie.CreatedAt,
+                UpdatedAt = movie.UpdatedAt,
+                Genres = movie.MovieGenres
+                    .OrderBy(movieGenre => movieGenre.Genre.Name)
+                    .Select(movieGenre => new GenreResponse
+                    {
+                        Id = movieGenre.Genre.Id,
+                        Name = movieGenre.Genre.Name
+                    })
+                    .ToList()
+            })
+            .SingleOrDefaultAsync();
     }
 
     public async Task<MovieResponse> CreateMovieAsync(

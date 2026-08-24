@@ -42,12 +42,17 @@ public class MoviesController : ControllerBase
         }
     }
 
-    // The full public retrieval behaviour is implemented in Step 4.5.
-    // This route exists now so POST can return a valid Location header.
     [HttpGet("{id:int}")]
-    public ActionResult GetMovieById(int id)
+    [AllowAnonymous]
+    public async Task<ActionResult<MovieResponse>> GetMovieById(int id)
     {
-        return StatusCode(
-            StatusCodes.Status501NotImplemented);
+        var movie = await _movieService.GetMovieByIdAsync(id);
+
+        if (movie is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(movie);
     }
 }
