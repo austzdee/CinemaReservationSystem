@@ -42,6 +42,49 @@ public class MoviesController : ControllerBase
         }
     }
 
+    [HttpGet]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<MovieSummaryResponse>>> GetMovies(
+                [FromQuery] int? genreId = null,
+                [FromQuery] int page = 1,
+                [FromQuery] int pageSize = 20)
+    {
+        if (genreId is <= 0)
+        {
+            return BadRequest(
+                new
+                {
+                    message = "Genre ID must be greater than zero."
+                });
+        }
+
+        if (page <= 0)
+        {
+            return BadRequest(
+                new
+                {
+                    message = "Page must be greater than zero."
+                });
+        }
+
+        if (pageSize is <= 0 or > 100)
+        {
+            return BadRequest(
+                new
+                {
+                    message = "Page size must be between 1 and 100."
+                });
+        }
+
+        var movies =
+            await _movieService.GetMoviesAsync(
+                genreId,
+                page,
+                pageSize);
+
+        return Ok(movies);
+    }
+
     [HttpGet("{id:int}")]
     [AllowAnonymous]
     public async Task<ActionResult<MovieResponse>> GetMovieById(int id)

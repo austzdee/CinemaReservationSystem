@@ -304,6 +304,204 @@ public class MovieManagementIntegrationTests
             response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetMovies_ReturnsOnlyActiveMovies()
+    {
+        var activeTitle =
+            $"Active Listing Movie {Guid.NewGuid():N}";
+
+        var archivedTitle =
+            $"Archived Listing Movie {Guid.NewGuid():N}";
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            context.Movies.AddRange(
+                new Movie
+                {
+                    Title = activeTitle,
+                    Description = "Active movie used for listing validation.",
+                    DurationMinutes = 100,
+                    IsActive = true
+                },
+                new Movie
+                {
+                    Title = archivedTitle,
+                    Description = "Archived movie used for listing validation.",
+                    DurationMinutes = 100,
+                    IsActive = false
+                });
+
+            await context.SaveChangesAsync();
+        }
+
+        var response =
+            await _client.GetAsync("/api/movies?pageSize=100");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var movies =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        var titles =
+            movies.EnumerateArray()
+                .Select(movie =>
+                    movie.GetProperty("title").GetString())
+                .ToArray();
+
+        Assert.Contains(activeTitle, titles);
+        Assert.DoesNotContain(archivedTitle, titles);
+    }
+
+    [Fact]
+    public async Task GetMovies_WithGenreFilter_ReturnsMatchingMovies()
+    {
+        int genreId;
+
+        var matchingTitle =
+            $"Genre Match {Guid.NewGuid():N}";
+
+        var otherTitle =
+            $"Genre Other {Guid.NewGuid():N}";
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var targetGenre = new Genre
+            {
+                Name = $"Target Genre {Guid.NewGuid():N}"
+            };
+
+            var otherGenre = new Genre
+            {
+                Name = $"Other Genre {Guid.NewGuid():N}"
+            };
+
+            var matchingMovie = new Movie
+            {
+                Title = matchingTitle,
+                Description = "Matches the requested genre.",
+                DurationMinutes = 100,
+                IsActive = true
+            };
+
+            matchingMovie.MovieGenres.Add(
+                new MovieGenre
+                {
+                    Movie = matchingMovie,
+                    Genre = targetGenre
+                });
+
+            var otherMovie = new Movie
+            {
+                Title = otherTitle,
+                Description = "Does not match the requested genre.",
+                DurationMinutes = 100,
+                IsActive = true
+            };
+
+            otherMovie.MovieGenres.Add(
+                new MovieGenre
+                {
+                    Movie = otherMovie,
+                    Genre = otherGenre
+                });
+
+            context.Movies.AddRange(
+                matchingMovie,
+                otherMovie);
+
+            await context.SaveChangesAsync();
+
+            genreId = targetGenre.Id;
+        }
+
+        var response =
+            await _client.GetAsync(
+                $"/api/movies?genreId={genreId}&pageSize=100");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var movies =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        var titles =
+            movies.EnumerateArray()
+                .Select(movie =>
+                    movie.GetProperty("title").GetString())
+                .ToArray();
+
+        Assert.Contains(matchingTitle, titles);
+        Assert.DoesNotContain(otherTitle, titles);
+    }
+
+    [Fact]
+    public async Task GetMovies_WithPagination_RespectsPageSize()
+    {
+        var response =
+            await _client.GetAsync(
+                "/api/movies?page=1&pageSize=1");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var movies =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        Assert.True(
+            movies.GetArrayLength() <= 1);
+    }
+
+    [Theory]
+    [InlineData("/api/movies?page=0")]
+    [InlineData("/api/movies?pageSize=0")]
+    [InlineData("/api/movies?pageSize=101")]
+    [InlineData("/api/movies?genreId=0")]
+    public async Task GetMovies_WithInvalidQuery_ReturnsBadRequest(
+        string url)
+    {
+        var response =
+            await _client.GetAsync(url);
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMovies_WithUnknownGenre_ReturnsEmptyList()
+    {
+        var response =
+            await _client.GetAsync(
+                $"/api/movies?genreId={int.MaxValue}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var movies =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            0,
+            movies.GetArrayLength());
+    }
+
     private async Task<int> CreateGenreAsync()
     {
         await using var scope =

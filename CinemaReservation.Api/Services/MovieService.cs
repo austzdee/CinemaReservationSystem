@@ -14,14 +14,43 @@ public class MovieService : IMovieService
         _context = context;
     }
 
-    public Task<IReadOnlyList<MovieSummaryResponse>> GetMoviesAsync(
-        int? genreId,
-        int page,
-        int pageSize)
+    public async Task<IReadOnlyList<MovieSummaryResponse>> GetMoviesAsync(
+            int? genreId,
+            int page,
+            int pageSize)
     {
-        // Catalogue queries will enforce active-only visibility and optional
-        // genre filtering before returning lightweight movie summaries.
-        throw new NotImplementedException();
+        var query = _context.Movies
+            .AsNoTracking()
+            .Where(movie => movie.IsActive);
+
+        if (genreId.HasValue)
+        {
+            query = query.Where(
+                movie => movie.MovieGenres.Any(
+                    movieGenre => movieGenre.GenreId == genreId.Value));
+        }
+
+        return await query
+            .OrderBy(movie => movie.Title)
+            .ThenBy(movie => movie.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(movie => new MovieSummaryResponse
+            {
+                Id = movie.Id,
+                Title = movie.Title,
+                PosterUrl = movie.PosterUrl,
+                DurationMinutes = movie.DurationMinutes,
+                Genres = movie.MovieGenres
+                    .OrderBy(movieGenre => movieGenre.Genre.Name)
+                    .Select(movieGenre => new GenreResponse
+                    {
+                        Id = movieGenre.GenreId,
+                        Name = movieGenre.Genre.Name
+                    })
+                    .ToList()
+            })
+            .ToListAsync();
     }
 
     public async Task<MovieResponse?> GetMovieByIdAsync(int id)
