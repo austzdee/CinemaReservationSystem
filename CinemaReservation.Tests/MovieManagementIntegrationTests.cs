@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using CinemaReservation.Api.Data;
 using CinemaReservation.Api.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -501,6 +502,444 @@ public class MovieManagementIntegrationTests
             0,
             movies.GetArrayLength());
     }
+
+    [Fact]
+    public async Task UpdateMovie_WithoutAuthentication_ReturnsUnauthorized()
+    {
+        var response =
+            await _client.PutAsJsonAsync(
+                $"/api/movies/{int.MaxValue}",
+                new
+                {
+                    Title = "Unauthorized Update",
+                    Description = "Should not reach the movie service.",
+                    PosterUrl = "https://example.com/poster.jpg",
+                    DurationMinutes = 120,
+                    GenreIds = new[]
+                    {
+                    int.MaxValue
+                    }
+                });
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateMovie_WithUserToken_ReturnsForbidden()
+    {
+        var email =
+            $"movie-update-user-{Guid.NewGuid():N}@example.com";
+
+        const string password = "Cinema1!";
+
+        var registrationResponse =
+            await _client.PostAsJsonAsync(
+                "/api/auth/register",
+                new
+                {
+                    Email = email,
+                    Password = password
+                });
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            registrationResponse.StatusCode);
+
+        var token =
+            await LoginAndReadAccessTokenAsync(
+                email,
+                password);
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/api/movies/{int.MaxValue}")
+            {
+                Content = JsonContent.Create(
+                    new
+                    {
+                        Title = "Forbidden Update",
+                        Description = "Regular users cannot update movies.",
+                        PosterUrl = "https://example.com/poster.jpg",
+                        DurationMinutes = 120,
+                        GenreIds = new[]
+                        {
+                        int.MaxValue
+                        }
+                    })
+            };
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            response.StatusCode);
+    }
+    [Fact]
+    public async Task UpdateMovie_WithAdminToken_UpdatesMovieAndReconcilesGenres()
+    {
+        int movieId;
+        int retainedGenreId;
+        int removedGenreId;
+        int addedGenreId;
+        DateTimeOffset createdAt;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var retainedGenre = new Genre
+            {
+                Name = $"Retained Genre {Guid.NewGuid():N}"
+            };
+
+            var removedGenre = new Genre
+            {
+                Name = $"Removed Genre {Guid.NewGuid():N}"
+            };
+
+            var addedGenre = new Genre
+            {
+                Name = $"Added Genre {Guid.NewGuid():N}"
+            };
+
+            var movie = new Movie
+            {
+                Title = $"Original Movie {Guid.NewGuid():N}",
+                Description = "Original movie description.",
+                PosterUrl = "https://example.com/original.jpg",
+                DurationMinutes = 100,
+                IsActive = true
+            };
+
+            movie.MovieGenres.Add(
+                new MovieGenre
+                {
+                    Movie = movie,
+                    Genre = retainedGenre
+                });
+
+            movie.MovieGenres.Add(
+                new MovieGenre
+                {
+                    Movie = movie,
+                    Genre = removedGenre
+                });
+
+            context.Movies.Add(movie);
+            context.Genres.Add(addedGenre);
+
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+            retainedGenreId = retainedGenre.Id;
+            removedGenreId = removedGenre.Id;
+            addedGenreId = addedGenre.Id;
+            createdAt = movie.CreatedAt;
+        }
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/api/movies/{movieId}")
+            {
+                Content = JsonContent.Create(
+                    new
+                    {
+                        Title = "  Updated Movie Title  ",
+                        Description = "  Updated description.  ",
+                        PosterUrl = "https://example.com/updated.jpg",
+                        DurationMinutes = 135,
+                        GenreIds = new[]
+                        {
+                        retainedGenreId,
+                        addedGenreId,
+                        addedGenreId
+                        }
+                    })
+            };
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var updatedMovie =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            "Updated Movie Title",
+            updatedMovie.GetProperty("title").GetString());
+
+        Assert.Equal(
+            "Updated description.",
+            updatedMovie.GetProperty("description").GetString());
+
+        Assert.Equal(
+            "https://example.com/updated.jpg",
+            updatedMovie.GetProperty("posterUrl").GetString());
+
+        Assert.Equal(
+            135,
+            updatedMovie.GetProperty("durationMinutes").GetInt32());
+
+        Assert.True(
+            updatedMovie.GetProperty("isActive").GetBoolean());
+
+        Assert.Equal(
+            createdAt,
+            updatedMovie.GetProperty("createdAt").GetDateTimeOffset());
+
+        var genres =
+            updatedMovie.GetProperty("genres");
+
+        Assert.Equal(
+            2,
+            genres.GetArrayLength());
+
+        var returnedGenreIds =
+            genres.EnumerateArray()
+                .Select(genre =>
+                    genre.GetProperty("id").GetInt32())
+                .ToArray();
+
+        Assert.Contains(retainedGenreId, returnedGenreIds);
+        Assert.Contains(addedGenreId, returnedGenreIds);
+        Assert.DoesNotContain(removedGenreId, returnedGenreIds);
+
+        await using var verificationScope =
+            _factory.Services.CreateAsyncScope();
+
+        var verificationContext =
+            verificationScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var persistedMovie =
+            await verificationContext.Movies
+                .AsNoTracking()
+                .Include(movie => movie.MovieGenres)
+                .SingleAsync(movie => movie.Id == movieId);
+
+        Assert.Equal(
+            2,
+            persistedMovie.MovieGenres.Count);
+
+        Assert.Contains(
+            persistedMovie.MovieGenres,
+            movieGenre =>
+                movieGenre.GenreId == retainedGenreId);
+
+        Assert.Contains(
+            persistedMovie.MovieGenres,
+            movieGenre =>
+                movieGenre.GenreId == addedGenreId);
+
+        Assert.DoesNotContain(
+            persistedMovie.MovieGenres,
+            movieGenre =>
+                movieGenre.GenreId == removedGenreId);
+
+        Assert.Equal(
+            createdAt,
+            persistedMovie.CreatedAt);
+
+        Assert.True(
+            persistedMovie.UpdatedAt > createdAt);
+    }
+
+    [Fact]
+    public async Task UpdateMovie_WithUnknownMovie_ReturnsNotFound()
+    {
+        var genreId =
+            await CreateGenreAsync();
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/api/movies/{int.MaxValue}")
+            {
+                Content = JsonContent.Create(
+                    new
+                    {
+                        Title = "Unknown Movie",
+                        Description = "Movie does not exist.",
+                        PosterUrl = "https://example.com/poster.jpg",
+                        DurationMinutes = 120,
+                        GenreIds = new[]
+                        {
+                        genreId
+                        }
+                    })
+            };
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateMovie_WithArchivedMovie_ReturnsNotFound()
+    {
+        int movieId;
+        int genreId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var genre = new Genre
+            {
+                Name = $"Archived Update Genre {Guid.NewGuid():N}"
+            };
+
+            var movie = new Movie
+            {
+                Title = $"Archived Update Movie {Guid.NewGuid():N}",
+                Description = "Archived movies cannot be updated.",
+                DurationMinutes = 100,
+                IsActive = false
+            };
+
+            context.Genres.Add(genre);
+            context.Movies.Add(movie);
+
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+            genreId = genre.Id;
+        }
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/api/movies/{movieId}")
+            {
+                Content = JsonContent.Create(
+                    new
+                    {
+                        Title = "Attempted Update",
+                        Description = "This update must be rejected.",
+                        PosterUrl = "https://example.com/poster.jpg",
+                        DurationMinutes = 120,
+                        GenreIds = new[]
+                        {
+                        genreId
+                        }
+                    })
+            };
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateMovie_WithUnknownGenre_ReturnsBadRequest()
+    {
+        int movieId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var movie = new Movie
+            {
+                Title = $"Invalid Genre Update {Guid.NewGuid():N}",
+                Description = "Original description.",
+                DurationMinutes = 100,
+                IsActive = true
+            };
+
+            context.Movies.Add(movie);
+
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+        }
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Put,
+                $"/api/movies/{movieId}")
+            {
+                Content = JsonContent.Create(
+                    new
+                    {
+                        Title = "Invalid Genre Update",
+                        Description = "Should not be persisted.",
+                        PosterUrl = "https://example.com/poster.jpg",
+                        DurationMinutes = 120,
+                        GenreIds = new[]
+                        {
+                        int.MaxValue
+                        }
+                    })
+            };
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+    }
+
+
 
     private async Task<int> CreateGenreAsync()
     {

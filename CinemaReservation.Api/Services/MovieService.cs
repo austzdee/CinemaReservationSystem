@@ -143,13 +143,93 @@ public class MovieService : IMovieService
         };
     }
 
-    public Task<MovieResponse?> UpdateMovieAsync(
-        int id,
-        UpdateMovieRequest request)
+    public async Task<MovieResponse?> UpdateMovieAsync(
+    int id,
+    UpdateMovieRequest request)
     {
-        // Updates will replace the current genre assignments so the persisted
-        // relationships reflect the request rather than accumulating entries.
-        throw new NotImplementedException();
+        var movie = await _context.Movies
+            .Include(movie => movie.MovieGenres)
+            .SingleOrDefaultAsync(
+                movie => movie.Id == id && movie.IsActive);
+
+        if (movie is null)
+        {
+            return null;
+        }
+
+        var genreIds = request.GenreIds
+            .Distinct()
+            .ToArray();
+
+        var genres = await _context.Genres
+            .Where(genre => genreIds.Contains(genre.Id))
+            .OrderBy(genre => genre.Name)
+            .ToListAsync();
+
+        if (genres.Count != genreIds.Length)
+        {
+            throw new ArgumentException(
+                "One or more supplied genre IDs are invalid.");
+        }
+
+        movie.Title = request.Title.Trim();
+        movie.Description = request.Description.Trim();
+        movie.PosterUrl = request.PosterUrl?.Trim();
+        movie.DurationMinutes = request.DurationMinutes;
+        movie.UpdatedAt = DateTime.UtcNow;
+        // Reconcile the relationship set so retained genres keep their tracked.
+        // join entities while removed and newly assigned genres are changed explicitly.
+        var requestedGenreIds = genreIds.ToHashSet();
+
+        var removedMovieGenres = movie.MovieGenres
+            .Where(movieGenre =>
+                !requestedGenreIds.Contains(movieGenre.GenreId))
+            .ToList();
+
+        foreach (var movieGenre in removedMovieGenres)
+        {
+            movie.MovieGenres.Remove(movieGenre);
+        }
+
+        var existingGenreIds = movie.MovieGenres
+            .Select(movieGenre => movieGenre.GenreId)
+            .ToHashSet();
+
+        foreach (var genre in genres)
+        {
+            if (existingGenreIds.Contains(genre.Id))
+            {
+                continue;
+            }
+
+            movie.MovieGenres.Add(
+                new MovieGenre
+                {
+                    Movie = movie,
+                    Genre = genre
+                });
+        }
+
+        await _context.SaveChangesAsync();
+
+        return new MovieResponse
+        {
+            Id = movie.Id,
+            Title = movie.Title,
+            Description = movie.Description,
+            PosterUrl = movie.PosterUrl,
+            DurationMinutes = movie.DurationMinutes,
+            IsActive = movie.IsActive,
+            CreatedAt = movie.CreatedAt,
+            UpdatedAt = movie.UpdatedAt,
+            Genres = genres
+                .Select(genre => new GenreResponse
+                {
+                    Id = genre.Id,
+                    Name = genre.Name
+                })
+                .ToList()
+        };
     }
 
     public Task<bool> ArchiveMovieAsync(int id)

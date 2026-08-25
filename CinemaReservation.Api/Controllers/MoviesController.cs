@@ -45,9 +45,9 @@ public class MoviesController : ControllerBase
     [HttpGet]
     [AllowAnonymous]
     public async Task<ActionResult<IReadOnlyList<MovieSummaryResponse>>> GetMovies(
-                [FromQuery] int? genreId = null,
-                [FromQuery] int page = 1,
-                [FromQuery] int pageSize = 20)
+        [FromQuery] int? genreId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
         if (genreId is <= 0)
         {
@@ -97,5 +97,35 @@ public class MoviesController : ControllerBase
         }
 
         return Ok(movie);
+    }
+
+    [HttpPut("{id:int}")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<ActionResult<MovieResponse>> UpdateMovie(
+        int id,
+        UpdateMovieRequest request)
+    {
+        try
+        {
+            var movie =
+                await _movieService.UpdateMovieAsync(
+                    id,
+                    request);
+
+            if (movie is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(movie);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(
+                new
+                {
+                    message = exception.Message
+                });
+        }
     }
 }
