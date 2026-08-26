@@ -15,9 +15,9 @@ public class MovieService : IMovieService
     }
 
     public async Task<IReadOnlyList<MovieSummaryResponse>> GetMoviesAsync(
-            int? genreId,
-            int page,
-            int pageSize)
+        int? genreId,
+        int page,
+        int pageSize)
     {
         var query = _context.Movies
             .AsNoTracking()
@@ -144,8 +144,8 @@ public class MovieService : IMovieService
     }
 
     public async Task<MovieResponse?> UpdateMovieAsync(
-    int id,
-    UpdateMovieRequest request)
+        int id,
+        UpdateMovieRequest request)
     {
         var movie = await _context.Movies
             .Include(movie => movie.MovieGenres)
@@ -177,7 +177,7 @@ public class MovieService : IMovieService
         movie.PosterUrl = request.PosterUrl?.Trim();
         movie.DurationMinutes = request.DurationMinutes;
         movie.UpdatedAt = DateTime.UtcNow;
-        // Reconcile the relationship set so retained genres keep their tracked.
+        // Reconcile the relationship set so retained genres keep their tracked
         // join entities while removed and newly assigned genres are changed explicitly.
         var requestedGenreIds = genreIds.ToHashSet();
 
@@ -232,29 +232,29 @@ public class MovieService : IMovieService
         };
     }
 
-  public async Task<bool> ArchiveMovieAsync(int id)
-{
-    var movie =
-        await _context.Movies
-            .SingleOrDefaultAsync(movie => movie.Id == id);
-
-    if (movie is null)
+    public async Task<bool> ArchiveMovieAsync(int id)
     {
-        return false;
-    }
+        var movie =
+            await _context.Movies
+                .SingleOrDefaultAsync(movie => movie.Id == id);
 
-    if (!movie.IsActive)
-    {
+        if (movie is null)
+        {
+            return false;
+        }
+
+        if (!movie.IsActive)
+        {
+            return true;
+        }
+
+        // Archiving preserves the movie record for historical relationships
+        // while removing it from the active catalogue.
+        movie.IsActive = false;
+        movie.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _context.SaveChangesAsync();
+
         return true;
     }
-
-    // Archiving preserves the movie record for historical relationships
-    // while removing it from the active catalogue.
-    movie.IsActive = false;
-    movie.UpdatedAt = DateTimeOffset.UtcNow;
-
-    await _context.SaveChangesAsync();
-
-    return true;
-}
 }
