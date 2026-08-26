@@ -232,10 +232,29 @@ public class MovieService : IMovieService
         };
     }
 
-    public Task<bool> ArchiveMovieAsync(int id)
+  public async Task<bool> ArchiveMovieAsync(int id)
+{
+    var movie =
+        await _context.Movies
+            .SingleOrDefaultAsync(movie => movie.Id == id);
+
+    if (movie is null)
     {
-        // Archiving preserves the movie record for future historical
-        // relationships while removing it from the active catalogue.
-        throw new NotImplementedException();
+        return false;
     }
+
+    if (!movie.IsActive)
+    {
+        return true;
+    }
+
+    // Archiving preserves the movie record for historical relationships
+    // while removing it from the active catalogue.
+    movie.IsActive = false;
+    movie.UpdatedAt = DateTimeOffset.UtcNow;
+
+    await _context.SaveChangesAsync();
+
+    return true;
+}
 }

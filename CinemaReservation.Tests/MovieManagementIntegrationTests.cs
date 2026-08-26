@@ -939,7 +939,262 @@ public class MovieManagementIntegrationTests
             response.StatusCode);
     }
 
+    [Fact]
+    public async Task ArchiveMovie_WithoutAuthentication_ReturnsUnauthorized()
+    {
+        var response =
+            await _client.DeleteAsync(
+                $"/api/movies/{int.MaxValue}");
 
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchiveMovie_WithUserToken_ReturnsForbidden()
+    {
+        var email =
+            $"movie-archive-user-{Guid.NewGuid():N}@example.com";
+
+        const string password = "Cinema1!";
+
+        var registrationResponse =
+            await _client.PostAsJsonAsync(
+                "/api/auth/register",
+                new
+                {
+                    Email = email,
+                    Password = password
+                });
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            registrationResponse.StatusCode);
+
+        var token =
+            await LoginAndReadAccessTokenAsync(
+                email,
+                password);
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/api/movies/{int.MaxValue}");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchiveMovie_WithAdminToken_ArchivesMovie()
+    {
+        int movieId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var movie = new Movie
+            {
+                Title = $"Archive Movie {Guid.NewGuid():N}",
+                Description = "Movie used to verify archiving.",
+                DurationMinutes = 100,
+                IsActive = true
+            };
+
+            context.Movies.Add(movie);
+
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+        }
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/api/movies/{movieId}");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            response.StatusCode);
+
+        await using var verificationScope =
+            _factory.Services.CreateAsyncScope();
+
+        var verificationContext =
+            verificationScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var persistedMovie =
+            await verificationContext.Movies
+                .AsNoTracking()
+                .SingleAsync(movie => movie.Id == movieId);
+
+        Assert.False(persistedMovie.IsActive);
+    }
+
+    [Fact]
+    public async Task ArchiveMovie_WhenAlreadyArchived_ReturnsNoContent()
+    {
+        int movieId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var movie = new Movie
+            {
+                Title = $"Already Archived Movie {Guid.NewGuid():N}",
+                Description = "Movie is already archived.",
+                DurationMinutes = 100,
+                IsActive = false
+            };
+
+            context.Movies.Add(movie);
+
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+        }
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/api/movies/{movieId}");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchiveMovie_WithUnknownMovie_ReturnsNotFound()
+    {
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/api/movies/{int.MaxValue}");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchiveMovie_RemovesMovieFromPublicCatalogueButPreservesRecord()
+    {
+        int movieId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var movie = new Movie
+            {
+                Title = $"Catalogue Archive Movie {Guid.NewGuid():N}",
+                Description = "Movie used to verify public catalogue behavior.",
+                DurationMinutes = 100,
+                IsActive = true
+            };
+
+            context.Movies.Add(movie);
+
+            await context.SaveChangesAsync();
+
+            movieId = movie.Id;
+        }
+
+        var adminToken =
+            await GetAdminAccessTokenAsync();
+
+        using var request =
+            new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"/api/movies/{movieId}");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                adminToken);
+
+        var archiveResponse =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            archiveResponse.StatusCode);
+
+        var publicResponse =
+            await _client.GetAsync(
+                $"/api/movies/{movieId}");
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            publicResponse.StatusCode);
+
+        await using var verificationScope =
+            _factory.Services.CreateAsyncScope();
+
+        var verificationContext =
+            verificationScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var persistedMovie =
+            await verificationContext.Movies
+                .AsNoTracking()
+                .SingleAsync(movie => movie.Id == movieId);
+
+        Assert.False(persistedMovie.IsActive);
+    }
 
     private async Task<int> CreateGenreAsync()
     {

@@ -128,4 +128,19 @@ public class MoviesController : ControllerBase
                 });
         }
     }
+
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> ArchiveMovie(int id)
+    {
+        var movieExists =
+            await _movieService.ArchiveMovieAsync(id);
+
+        if (!movieExists)
+        {
+            return NotFound();
+        }
+
+        return NoContent();
+    }
 }
