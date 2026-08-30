@@ -25,6 +25,9 @@ builder.Services.AddDataProtection();
 // Register OpenAPI document generation for development and API tooling.
 builder.Services.AddOpenApi();
 
+// Register the genre catalogue operations behind the application service boundary.
+builder.Services.AddScoped<IGenreService, GenreService>();
+
 // Register ASP.NET Core Identity for application users and role-based authorization.
 builder.Services
     .AddIdentityCore<ApplicationUser>(options =>
