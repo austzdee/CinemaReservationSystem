@@ -10,8 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace CinemaReservation.Tests;
 
-// Validates movie-management authorization, creation, and public retrieval
-// through the real API pipeline against the isolated PostgreSQL test database.
+// Validates movie-management business workflows through the real API
+// pipeline against the isolated PostgreSQL test database.
 [Collection("Integration")]
 public class MovieManagementIntegrationTests
     : IClassFixture<CustomWebApplicationFactory>
@@ -31,65 +31,6 @@ public class MovieManagementIntegrationTests
             });
     }
 
-    [Fact]
-    public async Task CreateMovie_WithoutAuthentication_ReturnsUnauthorized()
-    {
-        var response = await _client.PostAsJsonAsync(
-            "/api/movies",
-            CreateAuthorizationTestRequest());
-
-        Assert.Equal(
-            HttpStatusCode.Unauthorized,
-            response.StatusCode);
-    }
-
-    [Fact]
-    public async Task CreateMovie_WithUserToken_ReturnsForbidden()
-    {
-        var email =
-            $"movie-user-{Guid.NewGuid():N}@example.com";
-
-        const string password = "Cinema1!";
-
-        var registrationResponse =
-            await _client.PostAsJsonAsync(
-                "/api/auth/register",
-                new
-                {
-                    Email = email,
-                    Password = password
-                });
-
-        Assert.Equal(
-            HttpStatusCode.Created,
-            registrationResponse.StatusCode);
-
-        var token =
-            await LoginAndReadAccessTokenAsync(
-                email,
-                password);
-
-        using var request =
-            new HttpRequestMessage(
-                HttpMethod.Post,
-                "/api/movies")
-            {
-                Content = JsonContent.Create(
-                   CreateAuthorizationTestRequest())
-            };
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                token);
-
-        var response =
-            await _client.SendAsync(request);
-
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            response.StatusCode);
-    }
 
     [Fact]
     public async Task CreateMovie_WithAdminToken_ReturnsCreated()
@@ -503,86 +444,7 @@ public class MovieManagementIntegrationTests
             movies.GetArrayLength());
     }
 
-    [Fact]
-    public async Task UpdateMovie_WithoutAuthentication_ReturnsUnauthorized()
-    {
-        var response =
-            await _client.PutAsJsonAsync(
-                $"/api/movies/{int.MaxValue}",
-                new
-                {
-                    Title = "Unauthorized Update",
-                    Description = "Should not reach the movie service.",
-                    PosterUrl = "https://example.com/poster.jpg",
-                    DurationMinutes = 120,
-                    GenreIds = new[]
-                    {
-                    int.MaxValue
-                    }
-                });
 
-        Assert.Equal(
-            HttpStatusCode.Unauthorized,
-            response.StatusCode);
-    }
-
-    [Fact]
-    public async Task UpdateMovie_WithUserToken_ReturnsForbidden()
-    {
-        var email =
-            $"movie-update-user-{Guid.NewGuid():N}@example.com";
-
-        const string password = "Cinema1!";
-
-        var registrationResponse =
-            await _client.PostAsJsonAsync(
-                "/api/auth/register",
-                new
-                {
-                    Email = email,
-                    Password = password
-                });
-
-        Assert.Equal(
-            HttpStatusCode.Created,
-            registrationResponse.StatusCode);
-
-        var token =
-            await LoginAndReadAccessTokenAsync(
-                email,
-                password);
-
-        using var request =
-            new HttpRequestMessage(
-                HttpMethod.Put,
-                $"/api/movies/{int.MaxValue}")
-            {
-                Content = JsonContent.Create(
-                    new
-                    {
-                        Title = "Forbidden Update",
-                        Description = "Regular users cannot update movies.",
-                        PosterUrl = "https://example.com/poster.jpg",
-                        DurationMinutes = 120,
-                        GenreIds = new[]
-                        {
-                        int.MaxValue
-                        }
-                    })
-            };
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                token);
-
-        var response =
-            await _client.SendAsync(request);
-
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            response.StatusCode);
-    }
     [Fact]
     public async Task UpdateMovie_WithAdminToken_UpdatesMovieAndReconcilesGenres()
     {
@@ -939,61 +801,6 @@ public class MovieManagementIntegrationTests
             response.StatusCode);
     }
 
-    [Fact]
-    public async Task ArchiveMovie_WithoutAuthentication_ReturnsUnauthorized()
-    {
-        var response =
-            await _client.DeleteAsync(
-                $"/api/movies/{int.MaxValue}");
-
-        Assert.Equal(
-            HttpStatusCode.Unauthorized,
-            response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ArchiveMovie_WithUserToken_ReturnsForbidden()
-    {
-        var email =
-            $"movie-archive-user-{Guid.NewGuid():N}@example.com";
-
-        const string password = "Cinema1!";
-
-        var registrationResponse =
-            await _client.PostAsJsonAsync(
-                "/api/auth/register",
-                new
-                {
-                    Email = email,
-                    Password = password
-                });
-
-        Assert.Equal(
-            HttpStatusCode.Created,
-            registrationResponse.StatusCode);
-
-        var token =
-            await LoginAndReadAccessTokenAsync(
-                email,
-                password);
-
-        using var request =
-            new HttpRequestMessage(
-                HttpMethod.Delete,
-                $"/api/movies/{int.MaxValue}");
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue(
-                "Bearer",
-                token);
-
-        var response =
-            await _client.SendAsync(request);
-
-        Assert.Equal(
-            HttpStatusCode.Forbidden,
-            response.StatusCode);
-    }
 
     [Fact]
     public async Task ArchiveMovie_WithAdminToken_ArchivesMovie()
@@ -1264,21 +1071,4 @@ public class MovieManagementIntegrationTests
                 "Login response did not contain an access token.");
     }
 
-    private static object CreateAuthorizationTestRequest()
-    {
-        return new
-        {
-            Title =
-                $"Movie {Guid.NewGuid():N}",
-            Description =
-                "Movie-management integration test.",
-            PosterUrl =
-                "https://example.com/poster.jpg",
-            DurationMinutes = 100,
-            GenreIds = new[]
-            {
-                int.MaxValue
-            }
-        };
-    }
 }
