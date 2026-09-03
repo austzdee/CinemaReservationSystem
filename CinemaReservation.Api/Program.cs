@@ -55,6 +55,13 @@ builder.Services.AddScoped<IAuditoriumService, AuditoriumService>();
 // Register seat operations behind the application service boundary.
 builder.Services.AddScoped<ISeatService, SeatService>();
 
+// Register the system clock behind TimeProvider so scheduling rules remain
+// testable without coupling business logic directly to DateTimeOffset.UtcNow.
+builder.Services.AddSingleton(TimeProvider.System);
+
+// Register showtime scheduling operations behind the application service boundary.
+builder.Services.AddScoped<IShowtimeService, ShowtimeService>();
+
 // Generate JWT access tokens for authenticated users.
 builder.Services.AddScoped<ITokenService, TokenService>();
 
