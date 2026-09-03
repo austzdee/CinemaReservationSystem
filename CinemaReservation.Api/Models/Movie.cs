@@ -19,4 +19,7 @@ public class Movie
     public DateTimeOffset? UpdatedAt { get; set; }
 
     public ICollection<MovieGenre> MovieGenres { get; set; } = [];
+
+    public ICollection<Showtime> Showtimes { get; set; }
+    = new List<Showtime>();
 }

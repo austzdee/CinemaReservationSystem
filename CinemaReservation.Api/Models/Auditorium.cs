@@ -9,4 +9,7 @@ public class Auditorium
     public bool IsActive { get; set; } = true;
 
     public ICollection<Seat> Seats { get; set; } = [];
+
+    public ICollection<Showtime> Showtimes { get; set; }
+    = new List<Showtime>();
 }

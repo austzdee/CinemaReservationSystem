@@ -18,6 +18,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<Seat> Seats => Set<Seat>();
 
+    public DbSet<Showtime> Showtimes => Set<Showtime>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -29,6 +31,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         ConfigureMovieGenre(modelBuilder);
         ConfigureAuditorium(modelBuilder);
         ConfigureSeat(modelBuilder);
+        ConfigureShowtime(modelBuilder);
     }
 
     private static void ConfigureMovie(ModelBuilder modelBuilder)
@@ -48,8 +51,6 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.Property(movie => movie.PosterUrl)
                 .HasMaxLength(500);
 
-            // Movie duration is part of showtime scheduling, so invalid
-            // non-positive values must be rejected at database level.
             // Movie duration is part of showtime scheduling, so invalid
             // non-positive values must be rejected at database level.
             entity.ToTable(table =>
@@ -152,6 +153,60 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
             // Restrict deletion so removing an auditorium cannot silently
             // destroy its operational seat structure.
+        });
+    }
+
+    private static void ConfigureShowtime(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Showtime>(entity =>
+        {
+            entity.HasKey(showtime => showtime.Id);
+
+            entity.Property(showtime => showtime.TicketPrice)
+                .HasPrecision(10, 2);
+
+            entity.Property(showtime => showtime.Status)
+                .HasConversion<int>()
+                .IsRequired();
+
+            // Database constraints remain the final integrity boundary if data is
+            // written outside the application's scheduling workflow.
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_Showtimes_TicketPrice_Positive",
+                    "\"TicketPrice\" > 0");
+
+                table.HasCheckConstraint(
+                    "CK_Showtimes_EndsAt_After_StartsAt",
+                    "\"EndsAt\" > \"StartsAt\"");
+            });
+
+            entity.HasOne(showtime => showtime.Movie)
+                .WithMany(movie => movie.Showtimes)
+                .HasForeignKey(showtime => showtime.MovieId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(showtime => showtime.Auditorium)
+                .WithMany(auditorium => auditorium.Showtimes)
+                .HasForeignKey(showtime => showtime.AuditoriumId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Auditorium scheduling searches by room and start time when checking
+            // whether a proposed screening overlaps an existing one.
+            entity.HasIndex(showtime => new
+            {
+                showtime.AuditoriumId,
+                showtime.StartsAt
+            });
+
+            // Movie/date queries will be common when presenting scheduled
+            // screenings to customers.
+            entity.HasIndex(showtime => new
+            {
+                showtime.MovieId,
+                showtime.StartsAt
+            });
         });
     }
 }
