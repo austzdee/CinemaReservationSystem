@@ -45,8 +45,15 @@ builder.Services
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
+
 // Register movie catalogue operations behind the application service boundary.
 builder.Services.AddScoped<IMovieService, MovieService>();
+
+// Register auditorium operations behind the application service boundary.
+builder.Services.AddScoped<IAuditoriumService, AuditoriumService>();
+
+// Register seat operations behind the application service boundary.
+builder.Services.AddScoped<ISeatService, SeatService>();
 
 // Generate JWT access tokens for authenticated users.
 builder.Services.AddScoped<ITokenService, TokenService>();
