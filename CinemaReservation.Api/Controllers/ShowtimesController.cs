@@ -12,27 +12,39 @@ namespace CinemaReservation.Api.Controllers;
 public class ShowtimesController(
     IShowtimeService showtimeService) : ControllerBase
 {
-    [HttpGet]
-    [AllowAnonymous]
-    public async Task<ActionResult<IReadOnlyList<ShowtimeResponse>>> GetShowtimes(
-        [FromQuery] DateTimeOffset? startsFrom,
-        [FromQuery] DateTimeOffset? startsTo,
-        [FromQuery] int? movieId,
-        [FromQuery] int? auditoriumId,
-        CancellationToken cancellationToken)
+[HttpGet]
+[AllowAnonymous]
+public async Task<ActionResult<IReadOnlyList<ShowtimeResponse>>> GetShowtimes(
+    [FromQuery] DateTimeOffset? startsFrom,
+    [FromQuery] DateTimeOffset? startsTo,
+    [FromQuery] int? movieId,
+    [FromQuery] int? auditoriumId,
+    CancellationToken cancellationToken)
+{
+    if (startsFrom.HasValue &&
+        startsTo.HasValue &&
+        startsFrom.Value >= startsTo.Value)
     {
-        // Query filters are optional and delegated to the service so public
-        // read behavior remains consistent across callers.
-        var showtimes =
-            await showtimeService.GetScheduledAsync(
-                startsFrom,
-                startsTo,
-                movieId,
-                auditoriumId,
-                cancellationToken);
-
-        return Ok(showtimes);
+        return BadRequest(
+            new
+            {
+                message =
+                    "startsFrom must be earlier than startsTo."
+            });
     }
+
+    // Query filters are optional and delegated to the service so public
+    // read behavior remains consistent across callers.
+    var showtimes =
+        await showtimeService.GetScheduledAsync(
+            startsFrom,
+            startsTo,
+            movieId,
+            auditoriumId,
+            cancellationToken);
+
+    return Ok(showtimes);
+}
 
     [HttpGet("{id:int}")]
     [AllowAnonymous]

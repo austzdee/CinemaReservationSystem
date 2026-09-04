@@ -54,6 +54,54 @@ public class ShowtimeIntegrationTests
     }
 
     [Fact]
+    public async Task GetShowtimes_WithTimeWindow_UsesInclusiveStartAndExclusiveEnd()
+    {
+        var (movieId, auditoriumId) =
+            await CreateSchedulingDependenciesAsync();
+
+        var windowStart =
+            DateTimeOffset.UtcNow.AddDays(65);
+
+        var windowEnd =
+            windowStart.AddDays(1);
+
+        var atStartShowtimeId =
+            await CreateShowtimeDirectlyAsync(
+                movieId,
+                auditoriumId,
+                windowStart);
+
+        await CreateShowtimeDirectlyAsync(
+            movieId,
+            auditoriumId,
+            windowEnd);
+
+        var response =
+            await _client.GetAsync(
+                $"/api/showtimes" +
+                $"?movieId={movieId}" +
+                $"&startsFrom={Uri.EscapeDataString(windowStart.ToString("O"))}" +
+                $"&startsTo={Uri.EscapeDataString(windowEnd.ToString("O"))}");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var showtimes =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        var items =
+            showtimes.EnumerateArray().ToList();
+
+        Assert.Single(items);
+
+        Assert.Equal(
+            atStartShowtimeId,
+            items[0].GetProperty("id").GetInt32());
+    }
+
+    [Fact]
     public async Task CreateShowtime_WithAdminToken_ReturnsCreated()
     {
         var (movieId, auditoriumId) =
@@ -443,6 +491,26 @@ public class ShowtimeIntegrationTests
             response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetShowtimes_WithInvalidTimeWindow_ReturnsBadRequest()
+    {
+        var startsFrom =
+            DateTimeOffset.UtcNow.AddDays(10);
+
+        var startsTo =
+            startsFrom.AddDays(-1);
+
+        var response =
+            await _client.GetAsync(
+                $"/api/showtimes" +
+                $"?startsFrom={Uri.EscapeDataString(startsFrom.ToString("O"))}" +
+                $"&startsTo={Uri.EscapeDataString(startsTo.ToString("O"))}");
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+    }
+
     [Theory]
     [InlineData("POST", "/api/showtimes")]
     [InlineData("PUT", "/api/showtimes/999999")]
@@ -558,11 +626,10 @@ public class ShowtimeIntegrationTests
             movie.Id,
             auditorium.Id);
     }
-
     private async Task<int> CreateShowtimeDirectlyAsync(
-     int movieId,
-     int auditoriumId,
-     DateTimeOffset? startsAt = null)
+        int movieId,
+        int auditoriumId,
+        DateTimeOffset? startsAt = null)
     {
         await using var scope =
             _factory.Services.CreateAsyncScope();
@@ -572,7 +639,7 @@ public class ShowtimeIntegrationTests
                 .GetRequiredService<ApplicationDbContext>();
 
         var scheduledStart =
-        startsAt ?? DateTimeOffset.UtcNow.AddDays(20);
+            startsAt ?? DateTimeOffset.UtcNow.AddDays(20);
 
         var showtime = new Showtime
         {
