@@ -59,7 +59,18 @@ public class ShowtimeService(
 
         return await query
             .OrderBy(showtime => showtime.StartsAt)
-            .Select(showtime => ToResponse(showtime))
+            .Select(showtime => new ShowtimeResponse
+            {
+                Id = showtime.Id,
+                MovieId = showtime.MovieId,
+                MovieTitle = showtime.Movie.Title,
+                AuditoriumId = showtime.AuditoriumId,
+                AuditoriumName = showtime.Auditorium.Name,
+                StartsAt = showtime.StartsAt,
+                EndsAt = showtime.EndsAt,
+                TicketPrice = showtime.TicketPrice,
+                Status = showtime.Status
+            })
             .ToListAsync(cancellationToken);
     }
 
@@ -76,7 +87,18 @@ public class ShowtimeService(
                 showtime.Status == ShowtimeStatus.Scheduled &&
                 showtime.Movie.IsActive &&
                 showtime.Auditorium.IsActive)
-            .Select(showtime => ToResponse(showtime))
+            .Select(showtime => new ShowtimeResponse
+            {
+                Id = showtime.Id,
+                MovieId = showtime.MovieId,
+                MovieTitle = showtime.Movie.Title,
+                AuditoriumId = showtime.AuditoriumId,
+                AuditoriumName = showtime.Auditorium.Name,
+                StartsAt = showtime.StartsAt,
+                EndsAt = showtime.EndsAt,
+                TicketPrice = showtime.TicketPrice,
+                Status = showtime.Status
+            })
             .SingleOrDefaultAsync(cancellationToken);
     }
 
