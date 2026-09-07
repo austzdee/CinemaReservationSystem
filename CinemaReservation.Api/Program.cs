@@ -28,6 +28,11 @@ builder.Services.AddOpenApi();
 // Register the genre catalogue operations behind the application service boundary.
 builder.Services.AddScoped<IGenreService, GenreService>();
 
+// Register seat availability operations behind the application service boundary.
+builder.Services.AddScoped<
+    ISeatAvailabilityService,
+    SeatAvailabilityService>();
+
 // Register ASP.NET Core Identity for application users and role-based authorization.
 builder.Services
     .AddIdentityCore<ApplicationUser>(options =>
