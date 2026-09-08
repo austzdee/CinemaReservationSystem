@@ -1,4 +1,6 @@
+using System.Net.Http.Headers;
 using System.Text;
+using CinemaReservation.Api.Configuration;
 using CinemaReservation.Api.Data;
 using CinemaReservation.Api.Models;
 using CinemaReservation.Api.Services;
@@ -66,6 +68,46 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 // Register showtime scheduling operations behind the application service boundary.
 builder.Services.AddScoped<IShowtimeService, ShowtimeService>();
+
+// Configure server-side TMDB access without exposing provider credentials to clients.
+builder.Services
+    .AddOptions<TmdbOptions>()
+    .Bind(
+        builder.Configuration.GetSection(
+            TmdbOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddHttpClient(
+    "Tmdb",
+    (serviceProvider, client) =>
+    {
+        var options =
+            serviceProvider
+                .GetRequiredService<
+                    Microsoft.Extensions.Options.IOptions<TmdbOptions>>()
+                .Value;
+
+        client.BaseAddress =
+            new Uri(options.BaseUrl);
+
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                options.ReadAccessToken);
+
+        client.DefaultRequestHeaders.Accept.Add(
+            new MediaTypeWithQualityHeaderValue(
+                "application/json"));
+    });
+
+// Isolate TMDB API communication behind the application service contract.
+builder.Services.AddScoped<ITmdbService, TmdbService>();
+
+// Coordinate TMDB metadata with local movie and genre persistence.
+builder.Services.AddScoped<
+    ITmdbMovieImportService,
+    TmdbMovieImportService>();
 
 // Generate JWT access tokens for authenticated users.
 builder.Services.AddScoped<ITokenService, TokenService>();

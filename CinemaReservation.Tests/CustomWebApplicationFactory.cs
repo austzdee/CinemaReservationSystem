@@ -36,7 +36,13 @@ public class CustomWebApplicationFactory
                     new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:DefaultConnection"] =
-                            testConnectionString.ConnectionString
+                            testConnectionString.ConnectionString,
+
+                        // Integration tests replace external TMDB communication
+                        // where needed. This placeholder only satisfies options
+                        // validation during test startup.
+                        ["Tmdb:ReadAccessToken"] =
+                            "integration-test-token"
                     });
             });
     }

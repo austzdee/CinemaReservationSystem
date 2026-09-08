@@ -51,6 +51,13 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.Property(movie => movie.PosterUrl)
                 .HasMaxLength(500);
 
+
+            // Prevent the same TMDB movie from being imported more than once while
+            // allowing manually created movies to remain independent of TMDB.
+            entity.HasIndex(movie => movie.TmdbId)
+                .IsUnique()
+                .HasFilter("\"TmdbId\" IS NOT NULL");
+
             // Movie duration is part of showtime scheduling, so invalid
             // non-positive values must be rejected at database level.
             entity.ToTable(table =>
