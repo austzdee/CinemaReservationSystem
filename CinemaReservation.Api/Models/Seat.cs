@@ -13,4 +13,7 @@ public class Seat
     public int Number { get; set; }
 
     public bool IsActive { get; set; } = true;
+
+    public ICollection<ReservationSeat> ReservationSeats { get; set; } =
+    [];
 }

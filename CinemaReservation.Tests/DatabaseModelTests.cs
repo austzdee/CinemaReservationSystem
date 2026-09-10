@@ -44,27 +44,104 @@ public class DatabaseModelTests
     }
 
     [Fact]
-public void Movie_HasPositiveDurationCheckConstraint()
-{
-    using var context = CreateContext();
+    public void Movie_HasPositiveDurationCheckConstraint()
+    {
+        using var context = CreateContext();
 
-    // Check constraints are stored in EF Core's full design-time model,
-    // rather than the read-optimized runtime model.
-    var designTimeModel = context
-        .GetService<IDesignTimeModel>()
-        .Model;
+        // Check constraints are stored in EF Core's full design-time model,
+        // rather than the read-optimized runtime model.
+        var designTimeModel = context
+            .GetService<IDesignTimeModel>()
+            .Model;
 
-    var movieEntity = designTimeModel.FindEntityType(typeof(Movie));
+        var movieEntity = designTimeModel.FindEntityType(typeof(Movie));
 
-    Assert.NotNull(movieEntity);
+        Assert.NotNull(movieEntity);
 
-    // Scheduling depends on a valid runtime, so the database model
-    // must reject movies with zero or negative duration.
-    var constraint = movieEntity
-        .GetCheckConstraints()
-        .SingleOrDefault(checkConstraint =>
-            checkConstraint.Name == "CK_Movies_DurationMinutes_Positive");
+        // Scheduling depends on a valid runtime, so the database model
+        // must reject movies with zero or negative duration.
+        var constraint = movieEntity
+            .GetCheckConstraints()
+            .SingleOrDefault(checkConstraint =>
+                checkConstraint.Name == "CK_Movies_DurationMinutes_Positive");
 
-    Assert.NotNull(constraint);
-}
+        Assert.NotNull(constraint);
+    }
+
+    [Fact]
+    public void Reservation_HasAlternateKeyForIdAndShowtimeId()
+    {
+        using var context = CreateContext();
+
+        var reservationEntity =
+            context.Model.FindEntityType(typeof(Reservation));
+
+        Assert.NotNull(reservationEntity);
+
+        var alternateKey = reservationEntity
+            .GetKeys()
+            .SingleOrDefault(key =>
+                !key.IsPrimaryKey() &&
+                key.Properties
+                    .Select(property => property.Name)
+                    .SequenceEqual(
+                    [
+                        nameof(Reservation.Id),
+                    nameof(Reservation.ShowtimeId)
+                    ]));
+
+        Assert.NotNull(alternateKey);
+    }
+
+    [Fact]
+    public void ReservationSeat_HasUniqueActiveSeatAllocationIndex()
+    {
+        using var context = CreateContext();
+
+        var reservationSeatEntity =
+            context.Model.FindEntityType(typeof(ReservationSeat));
+
+        Assert.NotNull(reservationSeatEntity);
+
+        var uniqueIndex = reservationSeatEntity
+            .GetIndexes()
+            .SingleOrDefault(index =>
+                index.IsUnique &&
+                index.Properties
+                    .Select(property => property.Name)
+                    .SequenceEqual(
+                    [
+                        nameof(ReservationSeat.ShowtimeId),
+                    nameof(ReservationSeat.SeatId)
+                    ]));
+
+        Assert.NotNull(uniqueIndex);
+        Assert.Equal(
+            "\"ReleasedAt\" IS NULL",
+            uniqueIndex.GetFilter());
+    }
+
+    [Fact]
+    public void ReservationSeat_HasPositiveUnitPriceCheckConstraint()
+    {
+        using var context = CreateContext();
+
+        var designTimeModel = context
+            .GetService<IDesignTimeModel>()
+            .Model;
+
+        var reservationSeatEntity =
+            designTimeModel.FindEntityType(
+                typeof(ReservationSeat));
+
+        Assert.NotNull(reservationSeatEntity);
+
+        var constraint = reservationSeatEntity
+            .GetCheckConstraints()
+            .SingleOrDefault(checkConstraint =>
+                checkConstraint.Name ==
+                "CK_ReservationSeats_UnitPrice_Positive");
+
+        Assert.NotNull(constraint);
+    }
 }
