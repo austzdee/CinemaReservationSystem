@@ -69,6 +69,11 @@ builder.Services.AddSingleton(TimeProvider.System);
 // Register showtime scheduling operations behind the application service boundary.
 builder.Services.AddScoped<IShowtimeService, ShowtimeService>();
 
+// Register reservation operations behind the application service boundary.
+builder.Services.AddScoped<IReservationService, ReservationService>();
+
+builder.Services.AddSingleton(TimeProvider.System);
+
 // Configure server-side TMDB access without exposing provider credentials to clients.
 builder.Services
     .AddOptions<TmdbOptions>()

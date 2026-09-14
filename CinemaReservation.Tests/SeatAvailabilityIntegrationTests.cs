@@ -5,6 +5,7 @@ using CinemaReservation.Api.Data;
 using CinemaReservation.Api.Models;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 
 namespace CinemaReservation.Tests;
 
@@ -382,6 +383,141 @@ public class SeatAvailabilityIntegrationTests
         Assert.Equal(
             HttpStatusCode.NotFound,
             response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSeatAvailability_WithReservedSeat_MarksSeatUnavailable()
+    {
+        var (showtimeId, auditoriumId) =
+            await CreateShowtimeWithSeatsAsync();
+
+        int seatId;
+
+        await using (var scope =
+            _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            seatId =
+                await context.Seats
+                    .Where(seat =>
+                        seat.AuditoriumId == auditoriumId &&
+                        seat.IsActive)
+                    .OrderBy(seat => seat.Row)
+                    .ThenBy(seat => seat.Number)
+                    .Select(seat => seat.Id)
+                    .FirstAsync();
+        }
+
+        var email =
+            $"availability-{Guid.NewGuid():N}@example.com";
+
+        const string password = "Cinema1!";
+
+        var registrationResponse =
+            await _client.PostAsJsonAsync(
+                "/api/auth/register",
+                new
+                {
+                    Email = email,
+                    Password = password
+                });
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            registrationResponse.StatusCode);
+
+        var loginResponse =
+            await _client.PostAsJsonAsync(
+                "/api/auth/login",
+                new
+                {
+                    Email = email,
+                    Password = password
+                });
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            loginResponse.StatusCode);
+
+        var login =
+            await loginResponse.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        var token =
+            login
+                .GetProperty("accessToken")
+                .GetString();
+
+        Assert.False(string.IsNullOrWhiteSpace(token));
+
+        using var reservationRequest =
+            new HttpRequestMessage(
+                HttpMethod.Post,
+                "/api/reservations");
+
+        reservationRequest.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        reservationRequest.Content =
+            JsonContent.Create(
+                new
+                {
+                    showtimeId,
+                    seatIds = new[] { seatId }
+                });
+
+        var reservationResponse =
+            await _client.SendAsync(reservationRequest);
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            reservationResponse.StatusCode);
+
+        var response =
+            await _client.GetAsync(
+                $"/api/showtimes/{showtimeId}/seats");
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var availability =
+            await response.Content
+                .ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(
+            3,
+            availability
+                .GetProperty("capacity")
+                .GetInt32());
+
+        Assert.Equal(
+            2,
+            availability
+                .GetProperty("availableSeatCount")
+                .GetInt32());
+
+        var seats =
+            availability
+                .GetProperty("seats")
+                .EnumerateArray()
+                .ToList();
+
+        var reservedSeat =
+             Assert.Single(
+             seats,
+             seat =>
+             seat.GetProperty("id").GetInt32() == seatId);
+
+        Assert.False(
+            reservedSeat
+                .GetProperty("isAvailable")
+                .GetBoolean());
     }
 
     private async Task<(int ShowtimeId, int AuditoriumId)>

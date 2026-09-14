@@ -47,9 +47,13 @@ public class SeatAvailabilityService(
                     Row = seat.Row,
                     Number = seat.Number,
 
-                    // Reservation occupancy is introduced in Phase 8.
-                    // Until then, every active seat is available.
-                    IsAvailable = true
+                    // A seat remains unavailable while an active reservation allocation
+                    // exists for this showtime. Released allocations do not block reuse.
+                    IsAvailable = !context.ReservationSeats.Any(
+                    reservationSeat =>
+                    reservationSeat.ShowtimeId == showtime.Id &&
+                    reservationSeat.SeatId == seat.Id &&
+                    reservationSeat.ReleasedAt == null)
                 })
                 .ToListAsync(cancellationToken);
 
@@ -59,7 +63,7 @@ public class SeatAvailabilityService(
             AuditoriumId = showtime.AuditoriumId,
             AuditoriumName = showtime.AuditoriumName,
             Capacity = seats.Count,
-            AvailableSeatCount = seats.Count,
+            AvailableSeatCount = seats.Count(seat => seat.IsAvailable),
             Seats = seats
         };
     }
