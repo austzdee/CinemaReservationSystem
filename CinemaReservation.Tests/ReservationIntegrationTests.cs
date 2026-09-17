@@ -780,6 +780,68 @@ public class ReservationIntegrationTests
         Assert.Equal(12m, reservation.TotalPrice);
     }
 
+    [Fact]
+    public async Task CreateReservation_WhenTwoUsersReserveSameSeatConcurrently_AllowsOnlyOne()
+    {
+        var (showtimeId, seatId) = await CreateReservableShowtimeAsync();
+
+        var (firstToken, _) = await CreateUserTokenAsync();
+        var (secondToken, _) = await CreateUserTokenAsync();
+
+        async Task<HttpResponseMessage> ReserveAsync(string token)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                "/api/reservations")
+            {
+                Content = JsonContent.Create(
+                    new CreateReservationRequest
+                    {
+                        ShowtimeId = showtimeId,
+                        SeatIds = [seatId]
+                    })
+            };
+
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            return await _client.SendAsync(request);
+        }
+
+        // Submit both requests without awaiting either one first so they can
+        // compete for the same active seat allocation at the database boundary.
+        var firstReservationTask = ReserveAsync(firstToken);
+        var secondReservationTask = ReserveAsync(secondToken);
+
+        var responses = await Task.WhenAll(
+            firstReservationTask,
+            secondReservationTask);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Created);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Conflict);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+
+        var context =
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var activeAllocations =
+            await context.ReservationSeats
+                .AsNoTracking()
+                .CountAsync(
+                    reservationSeat =>
+                        reservationSeat.ShowtimeId == showtimeId &&
+                        reservationSeat.SeatId == seatId &&
+                        reservationSeat.ReleasedAt == null);
+
+        Assert.Equal(1, activeAllocations);
+    }
+
     private async Task<(string Token, string UserId)> CreateUserTokenAsync()
     {
         var email =
