@@ -842,6 +842,91 @@ public class ReservationIntegrationTests
         Assert.Equal(1, activeAllocations);
     }
 
+    [Fact]
+    public async Task CreateReservation_WhenOneSelectedSeatIsAlreadyReserved_DoesNotPartiallyAllocateOtherSeats()
+    {
+        var (showtimeId, firstSeatId) = await CreateReservableShowtimeAsync();
+
+        int secondSeatId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var showtime =
+                await context.Showtimes
+                    .AsNoTracking()
+                    .SingleAsync(showtime => showtime.Id == showtimeId);
+
+            var secondSeat = new Seat
+            {
+                AuditoriumId = showtime.AuditoriumId,
+                Row = "A",
+                Number = 2,
+                IsActive = true
+            };
+
+            context.Seats.Add(secondSeat);
+            await context.SaveChangesAsync();
+
+            secondSeatId = secondSeat.Id;
+        }
+
+        var (firstToken, _) = await CreateUserTokenAsync();
+        var (secondToken, _) = await CreateUserTokenAsync();
+
+        await CreateReservationAsync(
+            firstToken,
+            showtimeId,
+            firstSeatId);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/reservations")
+        {
+            Content = JsonContent.Create(
+                new CreateReservationRequest
+                {
+                    ShowtimeId = showtimeId,
+                    SeatIds = [firstSeatId, secondSeatId]
+                })
+        };
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", secondToken);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+        await using var verificationScope =
+            _factory.Services.CreateAsyncScope();
+
+        var verificationContext =
+            verificationScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var activeAllocations =
+            await verificationContext.ReservationSeats
+                .AsNoTracking()
+                .Where(
+                    reservationSeat =>
+                        reservationSeat.ShowtimeId == showtimeId &&
+                        reservationSeat.ReleasedAt == null)
+                .ToListAsync();
+
+        Assert.Single(
+            activeAllocations,
+            reservationSeat =>
+                reservationSeat.SeatId == firstSeatId);
+
+        Assert.DoesNotContain(
+            activeAllocations,
+            reservationSeat =>
+                reservationSeat.SeatId == secondSeatId);
+    }
+
     private async Task<(string Token, string UserId)> CreateUserTokenAsync()
     {
         var email =
