@@ -785,8 +785,8 @@ public class ReservationIntegrationTests
     {
         var (showtimeId, seatId) = await CreateReservableShowtimeAsync();
 
-        var (firstToken, _) = await CreateUserTokenAsync();
-        var (secondToken, _) = await CreateUserTokenAsync();
+        var (firstToken, firstUserId) = await CreateUserTokenAsync();
+        var (secondToken, secondUserId) = await CreateUserTokenAsync();
 
         async Task<HttpResponseMessage> ReserveAsync(string token)
         {
@@ -840,6 +840,17 @@ public class ReservationIntegrationTests
                         reservationSeat.ReleasedAt == null);
 
         Assert.Equal(1, activeAllocations);
+
+        var persistedReservations =
+             await context.Reservations
+                .AsNoTracking()
+                .CountAsync(
+                    reservation =>
+                        reservation.ShowtimeId == showtimeId &&
+                        (reservation.UserId == firstUserId ||
+                        reservation.UserId == secondUserId));
+
+        Assert.Equal(1, persistedReservations);
     }
 
     [Fact]
