@@ -927,6 +927,128 @@ public class ReservationIntegrationTests
                 reservationSeat.SeatId == secondSeatId);
     }
 
+    [Fact]
+    public async Task CreateReservation_WhenConcurrentRequestsOverlap_DoesNotPartiallyAllocateSeats()
+    {
+        var (showtimeId, firstSeatId) = await CreateReservableShowtimeAsync();
+
+        int secondSeatId;
+        int thirdSeatId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var showtime =
+                await context.Showtimes
+                    .AsNoTracking()
+                    .SingleAsync(showtime => showtime.Id == showtimeId);
+
+            var secondSeat = new Seat
+            {
+                AuditoriumId = showtime.AuditoriumId,
+                Row = "A",
+                Number = 2,
+                IsActive = true
+            };
+
+            var thirdSeat = new Seat
+            {
+                AuditoriumId = showtime.AuditoriumId,
+                Row = "A",
+                Number = 3,
+                IsActive = true
+            };
+
+            context.Seats.AddRange(secondSeat, thirdSeat);
+            await context.SaveChangesAsync();
+
+            secondSeatId = secondSeat.Id;
+            thirdSeatId = thirdSeat.Id;
+        }
+
+        var (firstToken, _) = await CreateUserTokenAsync();
+        var (secondToken, _) = await CreateUserTokenAsync();
+
+        async Task<HttpResponseMessage> ReserveAsync(
+             string token,
+             List<int> seatIds)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                "/api/reservations")
+            {
+                Content = JsonContent.Create(
+                    new CreateReservationRequest
+                    {
+                        ShowtimeId = showtimeId,
+                        SeatIds = seatIds
+                    })
+            };
+
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+
+            return await _client.SendAsync(request);
+        }
+
+        // Both requests include the same middle seat, forcing the database
+        // constraint to resolve the race while preserving transaction atomicity.
+        var firstReservationTask =
+            ReserveAsync(
+                firstToken,
+                [firstSeatId, secondSeatId]);
+
+        var secondReservationTask =
+            ReserveAsync(
+                secondToken,
+                [secondSeatId, thirdSeatId]);
+
+        var responses = await Task.WhenAll(
+            firstReservationTask,
+            secondReservationTask);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Created);
+
+        Assert.Single(
+            responses,
+            response => response.StatusCode == HttpStatusCode.Conflict);
+
+        await using var verificationScope =
+            _factory.Services.CreateAsyncScope();
+
+        var verificationContext =
+            verificationScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var activeAllocations =
+            await verificationContext.ReservationSeats
+                .AsNoTracking()
+                .Where(
+                    reservationSeat =>
+                        reservationSeat.ShowtimeId == showtimeId &&
+                        reservationSeat.ReleasedAt == null)
+                .Select(reservationSeat => reservationSeat.SeatId)
+                .ToListAsync();
+
+        Assert.Equal(2, activeAllocations.Count);
+
+        var firstRequestWon =
+            activeAllocations.Contains(firstSeatId) &&
+            activeAllocations.Contains(secondSeatId) &&
+            !activeAllocations.Contains(thirdSeatId);
+
+        var secondRequestWon =
+            !activeAllocations.Contains(firstSeatId) &&
+            activeAllocations.Contains(secondSeatId) &&
+            activeAllocations.Contains(thirdSeatId);
+
+        Assert.True(firstRequestWon || secondRequestWon);
+    }
+
     private async Task<(string Token, string UserId)> CreateUserTokenAsync()
     {
         var email =
