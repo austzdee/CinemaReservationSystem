@@ -1060,6 +1060,82 @@ public class ReservationIntegrationTests
         Assert.True(firstRequestWon || secondRequestWon);
     }
 
+    [Fact]
+    public async Task CancelReservation_AsOwner_ReleasesSeatAndReturnsOk()
+    {
+        var (token, userId) = await CreateUserTokenAsync();
+
+        var (showtimeId, seatId) =
+            await CreateReservableShowtimeAsync();
+
+        var reservationId =
+            await CreateReservationAsync(
+                token,
+                showtimeId,
+                seatId);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/reservations/{reservationId}/cancel");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var reservation =
+            await response.Content
+                .ReadFromJsonAsync<ReservationResponse>();
+
+        Assert.NotNull(reservation);
+        Assert.Equal(
+            ReservationStatus.Cancelled,
+            reservation.Status);
+        Assert.NotNull(reservation.CancelledAt);
+
+        await using var scope =
+            _factory.Services.CreateAsyncScope();
+
+        var context =
+            scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var persistedReservation =
+            await context.Reservations
+                .Include(reservation => reservation.ReservationSeats)
+                .SingleAsync(reservation =>
+                    reservation.Id == reservationId);
+
+        Assert.Equal(
+            userId,
+            persistedReservation.UserId);
+
+        Assert.Equal(
+            ReservationStatus.Cancelled,
+            persistedReservation.Status);
+
+        Assert.NotNull(
+            persistedReservation.CancelledAt);
+
+        var reservationSeat =
+            Assert.Single(
+                persistedReservation.ReservationSeats);
+
+        Assert.Equal(
+            seatId,
+            reservationSeat.SeatId);
+
+        Assert.NotNull(
+            reservationSeat.ReleasedAt);
+    }
+
     private async Task<(string Token, string UserId)> CreateUserTokenAsync()
     {
         var email =
@@ -1217,6 +1293,302 @@ public class ReservationIntegrationTests
         return reservation
             .GetProperty("id")
             .GetInt32();
+    }
+
+    [Fact]
+    public async Task CancelReservation_AsDifferentUser_ReturnsNotFound()
+    {
+        var (ownerToken, _) =
+            await CreateUserTokenAsync();
+
+        var (otherUserToken, _) =
+            await CreateUserTokenAsync();
+
+        var (showtimeId, seatId) =
+            await CreateReservableShowtimeAsync();
+
+        var reservationId =
+            await CreateReservationAsync(
+                ownerToken,
+                showtimeId,
+                seatId);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/reservations/{reservationId}/cancel");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                otherUserToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            response.StatusCode);
+
+        await using var scope =
+            _factory.Services.CreateAsyncScope();
+
+        var context =
+            scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var persistedReservation =
+            await context.Reservations
+                .Include(reservation => reservation.ReservationSeats)
+                .SingleAsync(reservation =>
+                    reservation.Id == reservationId);
+
+        Assert.Equal(
+            ReservationStatus.Confirmed,
+            persistedReservation.Status);
+
+        Assert.Null(
+            persistedReservation.CancelledAt);
+
+        var reservationSeat =
+            Assert.Single(
+                persistedReservation.ReservationSeats);
+
+        Assert.Null(
+            reservationSeat.ReleasedAt);
+    }
+
+    [Fact]
+    public async Task CancelReservation_WhenAlreadyCancelled_ReturnsBadRequest()
+    {
+        var (token, _) =
+            await CreateUserTokenAsync();
+
+        var (showtimeId, seatId) =
+            await CreateReservableShowtimeAsync();
+
+        var reservationId =
+            await CreateReservationAsync(
+                token,
+                showtimeId,
+                seatId);
+
+        async Task<HttpResponseMessage> CancelAsync()
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/reservations/{reservationId}/cancel");
+
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue(
+                    "Bearer",
+                    token);
+
+            return await _client.SendAsync(request);
+        }
+
+        var firstResponse =
+            await CancelAsync();
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            firstResponse.StatusCode);
+
+        var secondResponse =
+            await CancelAsync();
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            secondResponse.StatusCode);
+
+        await using var scope =
+            _factory.Services.CreateAsyncScope();
+
+        var context =
+            scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var reservation =
+            await context.Reservations
+                .Include(reservation => reservation.ReservationSeats)
+                .SingleAsync(reservation =>
+                    reservation.Id == reservationId);
+
+        Assert.Equal(
+            ReservationStatus.Cancelled,
+            reservation.Status);
+
+        Assert.NotNull(
+            reservation.CancelledAt);
+
+        var reservationSeat =
+            Assert.Single(
+                reservation.ReservationSeats);
+
+        Assert.NotNull(
+            reservationSeat.ReleasedAt);
+    }
+
+    [Fact]
+    public async Task CancelReservation_AfterShowtimeStarts_ReturnsBadRequest()
+    {
+        var (token, _) =
+            await CreateUserTokenAsync();
+
+        var (showtimeId, seatId) =
+            await CreateReservableShowtimeAsync();
+
+        var reservationId =
+            await CreateReservationAsync(
+                token,
+                showtimeId,
+                seatId);
+
+        await using (var scope =
+            _factory.Services.CreateAsyncScope())
+        {
+            var context =
+                scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+            var showtime =
+                await context.Showtimes
+                    .SingleAsync(showtime =>
+                        showtime.Id == showtimeId);
+
+            showtime.StartsAt =
+                DateTimeOffset.UtcNow.AddMinutes(-30);
+
+            showtime.EndsAt =
+                DateTimeOffset.UtcNow.AddMinutes(90);
+
+            await context.SaveChangesAsync();
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/reservations/{reservationId}/cancel");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            response.StatusCode);
+
+        await using var verificationScope =
+            _factory.Services.CreateAsyncScope();
+
+        var verificationContext =
+            verificationScope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var reservation =
+            await verificationContext.Reservations
+                .Include(reservation => reservation.ReservationSeats)
+                .SingleAsync(reservation =>
+                    reservation.Id == reservationId);
+
+        Assert.Equal(
+            ReservationStatus.Confirmed,
+            reservation.Status);
+
+        Assert.Null(
+            reservation.CancelledAt);
+
+        var reservationSeat =
+            Assert.Single(
+                reservation.ReservationSeats);
+
+        Assert.Null(
+            reservationSeat.ReleasedAt);
+    }
+
+    [Fact]
+    public async Task CancelReservation_ReleasesSeatForNewReservation()
+    {
+        var (firstUserToken, _) =
+            await CreateUserTokenAsync();
+
+        var (secondUserToken, _) =
+            await CreateUserTokenAsync();
+
+        var (showtimeId, seatId) =
+            await CreateReservableShowtimeAsync();
+
+        var firstReservationId =
+            await CreateReservationAsync(
+                firstUserToken,
+                showtimeId,
+                seatId);
+
+        using (var cancelRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/reservations/{firstReservationId}/cancel"))
+        {
+            cancelRequest.Headers.Authorization =
+                new AuthenticationHeaderValue(
+                    "Bearer",
+                    firstUserToken);
+
+            var cancelResponse =
+                await _client.SendAsync(cancelRequest);
+
+            Assert.Equal(
+                HttpStatusCode.OK,
+                cancelResponse.StatusCode);
+        }
+
+        var secondReservationId =
+            await CreateReservationAsync(
+                secondUserToken,
+                showtimeId,
+                seatId);
+
+        await using var scope =
+            _factory.Services.CreateAsyncScope();
+
+        var context =
+            scope.ServiceProvider
+                .GetRequiredService<ApplicationDbContext>();
+
+        var allocations =
+            await context.ReservationSeats
+                .AsNoTracking()
+                .Where(reservationSeat =>
+                    reservationSeat.ShowtimeId == showtimeId &&
+                    reservationSeat.SeatId == seatId)
+                .OrderBy(reservationSeat => reservationSeat.Id)
+                .ToListAsync();
+
+        Assert.Equal(2, allocations.Count);
+
+        Assert.NotNull(
+            allocations[0].ReleasedAt);
+
+        Assert.Null(
+            allocations[1].ReleasedAt);
+
+        Assert.NotEqual(
+            firstReservationId,
+            secondReservationId);
+    }
+
+    [Fact]
+    public async Task CancelReservation_WithoutAuthentication_ReturnsUnauthorized()
+    {
+        var response =
+            await _client.PostAsync(
+                "/api/reservations/1/cancel",
+                content: null);
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            response.StatusCode);
     }
 
     private async Task<string> CreateAdminTokenAsync()

@@ -14,4 +14,9 @@ public interface IReservationService
         string userId,
         bool isAdmin,
         CancellationToken cancellationToken = default);
+
+    Task<ReservationResponse> CancelAsync(
+        int reservationId,
+        string userId,
+        CancellationToken cancellationToken = default);
 }

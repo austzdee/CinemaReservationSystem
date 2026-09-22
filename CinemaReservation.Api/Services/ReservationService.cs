@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace CinemaReservation.Api.Services;
+
 public class ReservationService(
     ApplicationDbContext context,
     TimeProvider timeProvider) : IReservationService
@@ -182,5 +183,89 @@ public class ReservationService(
             .SingleOrDefaultAsync(cancellationToken);
 
         return reservation;
+    }
+
+    public async Task<ReservationResponse> CancelAsync(
+    int reservationId,
+    string userId,
+    CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new InvalidOperationException(
+                "An authenticated user is required.");
+        }
+
+        var reservation =
+            await context.Reservations
+                .Include(reservation => reservation.Showtime)
+                .Include(reservation => reservation.ReservationSeats)
+                .ThenInclude(reservationSeat => reservationSeat.Seat)
+                .SingleOrDefaultAsync(
+                    reservation =>
+                        reservation.Id == reservationId &&
+                        reservation.UserId == userId,
+                    cancellationToken);
+
+        if (reservation is null)
+        {
+            throw new KeyNotFoundException(
+                "Reservation was not found.");
+        }
+
+        if (reservation.Status != ReservationStatus.Confirmed)
+        {
+            throw new InvalidOperationException(
+                "Only confirmed reservations can be cancelled.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+
+        if (reservation.Showtime.StartsAt <= now)
+        {
+            throw new InvalidOperationException(
+                "Past or started reservations cannot be cancelled.");
+        }
+
+        reservation.Status = ReservationStatus.Cancelled;
+        reservation.CancelledAt = now;
+
+        foreach (var reservationSeat in reservation.ReservationSeats)
+        {
+            if (reservationSeat.ReleasedAt is null)
+            {
+                reservationSeat.ReleasedAt = now;
+            }
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+
+        return ToResponse(reservation);
+    }
+
+    private static ReservationResponse ToResponse(
+    Reservation reservation)
+    {
+        return new ReservationResponse
+        {
+            Id = reservation.Id,
+            ShowtimeId = reservation.ShowtimeId,
+            Status = reservation.Status,
+            CreatedAt = reservation.CreatedAt,
+            CancelledAt = reservation.CancelledAt,
+            TotalPrice = reservation.ReservationSeats
+                .Sum(reservationSeat => reservationSeat.UnitPrice),
+            Seats = reservation.ReservationSeats
+                .OrderBy(reservationSeat => reservationSeat.Seat.Row)
+                .ThenBy(reservationSeat => reservationSeat.Seat.Number)
+                .Select(reservationSeat => new ReservationSeatResponse
+                {
+                    SeatId = reservationSeat.SeatId,
+                    Row = reservationSeat.Seat.Row,
+                    Number = reservationSeat.Seat.Number,
+                    UnitPrice = reservationSeat.UnitPrice
+                })
+                .ToList()
+        };
     }
 }

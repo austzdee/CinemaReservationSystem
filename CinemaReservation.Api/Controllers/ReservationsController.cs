@@ -104,4 +104,40 @@ public class ReservationsController(
 
         return Ok(reservation);
     }
+
+    [HttpPost("{reservationId:int}/cancel")]
+    public async Task<ActionResult<ReservationResponse>> Cancel(
+    int reservationId,
+    CancellationToken cancellationToken)
+    {
+        var userId =
+            User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var reservation =
+                await reservationService.CancelAsync(
+                    reservationId,
+                    userId,
+                    cancellationToken);
+
+            return Ok(reservation);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new
+            {
+                message = exception.Message
+            });
+        }
+    }
 }
