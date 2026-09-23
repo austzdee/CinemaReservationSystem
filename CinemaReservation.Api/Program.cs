@@ -5,11 +5,14 @@ using CinemaReservation.Api.Data;
 using CinemaReservation.Api.Models;
 using CinemaReservation.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,7 +28,11 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddDataProtection();
 
 // Register OpenAPI document generation for development and API tooling.
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<AuthOperationTransformer>();
+});
 
 // Register the genre catalogue operations behind the application service boundary.
 builder.Services.AddScoped<IGenreService, GenreService>();
@@ -72,7 +79,9 @@ builder.Services.AddScoped<IShowtimeService, ShowtimeService>();
 // Register reservation operations behind the application service boundary.
 builder.Services.AddScoped<IReservationService, ReservationService>();
 
-builder.Services.AddSingleton(TimeProvider.System);
+// Register administrative reporting operations behind the application service boundary.
+builder.Services.AddScoped<IReportService, ReportService>();
+
 
 // Configure server-side TMDB access without exposing provider credentials to clients.
 builder.Services
@@ -159,6 +168,14 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+
+    // Provide an interactive API explorer using the existing OpenAPI document.
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint(
+            "/openapi/v1.json",
+            "Cinema Reservation API v1");
+    });
 }
 
 app.UseHttpsRedirection();
@@ -173,6 +190,84 @@ await IdentitySeeder.SeedAsync(
     app.Configuration);
 
 app.Run();
+
+internal sealed class BearerSecuritySchemeTransformer(
+    IAuthenticationSchemeProvider authenticationSchemeProvider)
+    : IOpenApiDocumentTransformer
+{
+    public async Task TransformAsync(
+        OpenApiDocument document,
+        OpenApiDocumentTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        var authenticationSchemes =
+            await authenticationSchemeProvider
+                .GetAllSchemesAsync();
+
+        if (!authenticationSchemes.Any(
+                scheme => scheme.Name == "Bearer"))
+        {
+            return;
+        }
+
+        // Expose JWT Bearer authentication to OpenAPI clients such as Swagger UI.
+        document.Components ??=
+            new OpenApiComponents();
+
+        document.Components.SecuritySchemes =
+            new Dictionary<string, IOpenApiSecurityScheme>
+            {
+                ["Bearer"] = new OpenApiSecurityScheme
+                {
+                    Type = SecuritySchemeType.Http,
+                    Scheme = "bearer",
+                    In = ParameterLocation.Header,
+                    BearerFormat = "JWT"
+                }
+            };
+    }
+}
+
+internal sealed class AuthOperationTransformer
+    : IOpenApiOperationTransformer
+{
+    public Task TransformAsync(
+        OpenApiOperation operation,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        var endpointMetadata =
+            context.Description.ActionDescriptor.EndpointMetadata;
+
+        var allowsAnonymous =
+            endpointMetadata
+                .OfType<AllowAnonymousAttribute>()
+                .Any();
+
+        var requiresAuthorization =
+            endpointMetadata
+                .OfType<AuthorizeAttribute>()
+                .Any();
+
+        if (allowsAnonymous || !requiresAuthorization)
+        {
+            return Task.CompletedTask;
+        }
+
+        // Mark only protected operations as requiring the registered JWT scheme.
+        operation.Security ??=
+            new List<OpenApiSecurityRequirement>();
+
+        operation.Security.Add(
+            new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(
+                    "Bearer",
+                    context.Document)] = []
+            });
+        return Task.CompletedTask;
+    }
+}
 
 // Expose the generated Program type to the integration test project.
 public partial class Program;
