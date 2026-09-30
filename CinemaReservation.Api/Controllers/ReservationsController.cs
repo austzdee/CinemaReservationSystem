@@ -107,8 +107,8 @@ public class ReservationsController(
 
     [HttpPost("{reservationId:int}/cancel")]
     public async Task<ActionResult<ReservationResponse>> Cancel(
-    int reservationId,
-    CancellationToken cancellationToken)
+        int reservationId,
+        CancellationToken cancellationToken)
     {
         var userId =
             User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -139,5 +139,26 @@ public class ReservationsController(
                 message = exception.Message
             });
         }
+    }
+
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<ReservationResponse>>> GetMine(
+         CancellationToken cancellationToken)
+    {
+        // Reservation ownership comes from the authenticated identity,
+        // preventing callers from requesting another user's history.
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Unauthorized();
+        }
+
+        var reservations =
+            await reservationService.GetForUserAsync(
+                userId,
+                cancellationToken);
+
+        return Ok(reservations);
     }
 }

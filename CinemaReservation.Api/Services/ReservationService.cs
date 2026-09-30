@@ -243,6 +243,45 @@ public class ReservationService(
         return ToResponse(reservation);
     }
 
+    public async Task<IReadOnlyList<ReservationResponse>> GetForUserAsync(
+    string userId,
+    CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException(
+                "Authenticated user id is required.",
+                nameof(userId));
+        }
+
+        return await context.Reservations
+            .AsNoTracking()
+            .Where(reservation => reservation.UserId == userId)
+            .OrderByDescending(reservation => reservation.CreatedAt)
+            .Select(reservation => new ReservationResponse
+            {
+                Id = reservation.Id,
+                ShowtimeId = reservation.ShowtimeId,
+                Status = reservation.Status,
+                CreatedAt = reservation.CreatedAt,
+                CancelledAt = reservation.CancelledAt,
+                TotalPrice = reservation.ReservationSeats
+                    .Sum(reservationSeat => reservationSeat.UnitPrice),
+                Seats = reservation.ReservationSeats
+                    .OrderBy(reservationSeat => reservationSeat.Seat.Row)
+                    .ThenBy(reservationSeat => reservationSeat.Seat.Number)
+                    .Select(reservationSeat => new ReservationSeatResponse
+                    {
+                        SeatId = reservationSeat.SeatId,
+                        Row = reservationSeat.Seat.Row,
+                        Number = reservationSeat.Seat.Number,
+                        UnitPrice = reservationSeat.UnitPrice
+                    })
+                    .ToList()
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     private static ReservationResponse ToResponse(
     Reservation reservation)
     {

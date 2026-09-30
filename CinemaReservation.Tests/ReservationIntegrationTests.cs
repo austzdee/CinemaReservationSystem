@@ -1507,7 +1507,6 @@ public class ReservationIntegrationTests
         Assert.Null(
             reservationSeat.ReleasedAt);
     }
-
     [Fact]
     public async Task CancelReservation_ReleasesSeatForNewReservation()
     {
@@ -1589,6 +1588,75 @@ public class ReservationIntegrationTests
         Assert.Equal(
             HttpStatusCode.Unauthorized,
             response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMyReservations_WithoutAuthentication_ReturnsUnauthorized()
+    {
+        var response =
+            await _client.GetAsync("/api/reservations");
+
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMyReservations_ReturnsOnlyAuthenticatedUsersReservations()
+    {
+        var (ownerToken, _) =
+            await CreateUserTokenAsync();
+
+        var (otherUserToken, _) =
+            await CreateUserTokenAsync();
+
+        var (ownerShowtimeId, ownerSeatId) =
+            await CreateReservableShowtimeAsync();
+
+        var (otherShowtimeId, otherSeatId) =
+            await CreateReservableShowtimeAsync();
+
+        var ownerReservationId =
+            await CreateReservationAsync(
+                ownerToken,
+                ownerShowtimeId,
+                ownerSeatId);
+
+        var otherReservationId =
+            await CreateReservationAsync(
+                otherUserToken,
+                otherShowtimeId,
+                otherSeatId);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/reservations");
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue(
+                "Bearer",
+                ownerToken);
+
+        var response =
+            await _client.SendAsync(request);
+
+        Assert.Equal(
+            HttpStatusCode.OK,
+            response.StatusCode);
+
+        var reservations =
+            await response.Content
+                .ReadFromJsonAsync<List<ReservationResponse>>();
+
+        Assert.NotNull(reservations);
+
+        Assert.Contains(
+            reservations,
+            reservation => reservation.Id == ownerReservationId);
+
+        Assert.DoesNotContain(
+            reservations,
+            reservation => reservation.Id == otherReservationId);
     }
 
     private async Task<string> CreateAdminTokenAsync()

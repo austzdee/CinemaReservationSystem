@@ -19,4 +19,8 @@ public interface IReservationService
         int reservationId,
         string userId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ReservationResponse>> GetForUserAsync(
+    string userId,
+    CancellationToken cancellationToken = default);
 }
