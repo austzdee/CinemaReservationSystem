@@ -9,6 +9,7 @@ public class MovieSummaryResponse
     public string? PosterUrl { get; set; }
 
     public int DurationMinutes { get; set; }
+    public bool IsFeatured { get; set; }
 
     public List<GenreResponse> Genres { get; set; } = [];
 }

@@ -13,6 +13,7 @@ public class MovieResponse
     public int DurationMinutes { get; set; }
 
     public bool IsActive { get; set; }
+    public bool IsFeatured { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 

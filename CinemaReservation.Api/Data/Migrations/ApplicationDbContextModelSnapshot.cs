@@ -156,6 +156,9 @@ namespace CinemaReservation.Api.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsFeatured")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("PosterUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");

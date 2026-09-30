@@ -18,5 +18,9 @@ public interface IMovieService
         int id,
         UpdateMovieRequest request);
 
+    Task<MovieResponse?> SetFeaturedMovieAsync(int id);
+
+
     Task<bool> ArchiveMovieAsync(int id);
+
 }

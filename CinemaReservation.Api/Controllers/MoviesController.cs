@@ -129,6 +129,21 @@ public class MoviesController : ControllerBase
         }
     }
 
+    [HttpPut("{id:int}/feature")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<ActionResult<MovieResponse>> SetFeaturedMovie(int id)
+    {
+        var movie =
+            await _movieService.SetFeaturedMovieAsync(id);
+
+        if (movie is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(movie);
+    }
+
     [HttpDelete("{id:int}")]
     [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> ArchiveMovie(int id)

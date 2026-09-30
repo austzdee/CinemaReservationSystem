@@ -149,6 +149,7 @@ public sealed class TmdbMovieImportService(
                 Description = movie.Description,
                 PosterUrl = movie.PosterUrl,
                 DurationMinutes = movie.DurationMinutes,
+                IsFeatured = movie.IsFeatured,
                 IsActive = movie.IsActive,
                 CreatedAt = movie.CreatedAt,
                 UpdatedAt = movie.UpdatedAt,

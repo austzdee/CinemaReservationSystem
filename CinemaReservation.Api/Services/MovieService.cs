@@ -41,6 +41,7 @@ public class MovieService : IMovieService
                 Title = movie.Title,
                 PosterUrl = movie.PosterUrl,
                 DurationMinutes = movie.DurationMinutes,
+                IsFeatured = movie.IsFeatured,
                 Genres = movie.MovieGenres
                     .OrderBy(movieGenre => movieGenre.Genre.Name)
                     .Select(movieGenre => new GenreResponse
@@ -65,6 +66,7 @@ public class MovieService : IMovieService
                 Description = movie.Description,
                 PosterUrl = movie.PosterUrl,
                 DurationMinutes = movie.DurationMinutes,
+                IsFeatured = movie.IsFeatured,
                 IsActive = movie.IsActive,
                 CreatedAt = movie.CreatedAt,
                 UpdatedAt = movie.UpdatedAt,
@@ -130,6 +132,7 @@ public class MovieService : IMovieService
             Description = movie.Description,
             PosterUrl = movie.PosterUrl,
             DurationMinutes = movie.DurationMinutes,
+            IsFeatured = movie.IsFeatured,
             IsActive = movie.IsActive,
             CreatedAt = movie.CreatedAt,
             UpdatedAt = movie.UpdatedAt,
@@ -219,6 +222,7 @@ public class MovieService : IMovieService
             Description = movie.Description,
             PosterUrl = movie.PosterUrl,
             DurationMinutes = movie.DurationMinutes,
+            IsFeatured = movie.IsFeatured,
             IsActive = movie.IsActive,
             CreatedAt = movie.CreatedAt,
             UpdatedAt = movie.UpdatedAt,
@@ -227,6 +231,56 @@ public class MovieService : IMovieService
                 {
                     Id = genre.Id,
                     Name = genre.Name
+                })
+                .ToList()
+        };
+    }
+
+    public async Task<MovieResponse?> SetFeaturedMovieAsync(int id)
+    {
+        var movie = await _context.Movies
+            .Include(movie => movie.MovieGenres)
+                .ThenInclude(movieGenre => movieGenre.Genre)
+            .SingleOrDefaultAsync(
+                movie => movie.Id == id && movie.IsActive);
+
+        if (movie is null)
+        {
+            return null;
+        }
+
+        // Only one active movie may be featured at a time.
+        await _context.Movies
+            .Where(otherMovie =>
+                otherMovie.Id != id &&
+                otherMovie.IsFeatured)
+            .ExecuteUpdateAsync(setters =>
+                setters.SetProperty(
+                    otherMovie => otherMovie.IsFeatured,
+                    false));
+
+        movie.IsFeatured = true;
+        movie.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return new MovieResponse
+        {
+            Id = movie.Id,
+            Title = movie.Title,
+            Description = movie.Description,
+            PosterUrl = movie.PosterUrl,
+            DurationMinutes = movie.DurationMinutes,
+            IsFeatured = movie.IsFeatured,
+            IsActive = movie.IsActive,
+            CreatedAt = movie.CreatedAt,
+            UpdatedAt = movie.UpdatedAt,
+            Genres = movie.MovieGenres
+                .OrderBy(movieGenre => movieGenre.Genre.Name)
+                .Select(movieGenre => new GenreResponse
+                {
+                    Id = movieGenre.GenreId,
+                    Name = movieGenre.Genre.Name
                 })
                 .ToList()
         };
