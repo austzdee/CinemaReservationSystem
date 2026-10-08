@@ -1,5 +1,9 @@
-import type { MovieDetails,
-            MovieSummary } from '../types/movie'
+import type {
+  MovieDetails,
+  MovieSummary,
+  UpdateMovieRequest,
+} from "../types/movie";
+            
 
 
 const API_BASE_URL =
@@ -61,6 +65,74 @@ export async function getMovieById(
   if (!response.ok) {
     throw new Error(
       `Unable to load movie details. Status: ${response.status}.`,
+    );
+  }
+
+  return (await response.json()) as MovieDetails;
+}
+
+export async function setFeaturedMovie(
+  id: number,
+  accessToken: string,
+): Promise<MovieDetails> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/movies/${id}/feature`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to feature movie. Status: ${response.status}.`,
+    );
+  }
+
+  return (await response.json()) as MovieDetails;
+}
+export async function archiveMovie(
+  id: number,
+  accessToken: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/movies/${id}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to archive movie. Status: ${response.status}.`,
+    );
+  }
+}
+export async function updateMovie(
+  id: number,
+  request: UpdateMovieRequest,
+  accessToken: string,
+): Promise<MovieDetails> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/movies/${id}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to update movie. Status: ${response.status}.`,
     );
   }
 

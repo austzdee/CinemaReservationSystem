@@ -5,6 +5,7 @@ import type { LoginRequest } from '../types/auth'
 export interface AuthContextValue {
   accessToken: string | null
   isAuthenticated: boolean
+  isAdmin: boolean
   login: (request: LoginRequest) => Promise<void>
   logout: () => void
 }

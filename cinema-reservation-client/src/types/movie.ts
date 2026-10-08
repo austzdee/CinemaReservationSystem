@@ -18,3 +18,10 @@ export interface MovieDetails extends MovieSummary {
   createdAt: string
   updatedAt: string | null
 }
+export interface UpdateMovieRequest {
+  title: string
+  description: string
+  posterUrl: string | null
+  durationMinutes: number
+  genreIds: number[]
+}

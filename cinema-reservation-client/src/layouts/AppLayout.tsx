@@ -4,7 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 
 export default function AppLayout() {
   const navigate = useNavigate();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, isAdmin, logout } = useAuth();
 
   function handleLogout() {
     logout();
@@ -31,6 +31,17 @@ export default function AppLayout() {
 
             {isAuthenticated ? (
               <>
+                {isAdmin && (
+                  <NavLink
+                    to="/admin/movies"
+                    className={({ isActive }) =>
+                      isActive ? "text-white" : "transition hover:text-white"
+                    }
+                  >
+                    Admin
+                  </NavLink>
+                )}
+
                 <NavLink
                   to="/reservations"
                   className={({ isActive }) =>
