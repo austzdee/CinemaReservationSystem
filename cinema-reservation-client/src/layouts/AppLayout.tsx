@@ -32,14 +32,25 @@ export default function AppLayout() {
             {isAuthenticated ? (
               <>
                 {isAdmin && (
-                  <NavLink
-                    to="/admin/movies"
-                    className={({ isActive }) =>
-                      isActive ? "text-white" : "transition hover:text-white"
-                    }
-                  >
-                    Admin
-                  </NavLink>
+                  <>
+                    <NavLink
+                      to="/admin/movies"
+                      className={({ isActive }) =>
+                        isActive ? "text-white" : "transition hover:text-white"
+                      }
+                    >
+                      Movies
+                    </NavLink>
+
+                    <NavLink
+                      to="/admin/showtimes"
+                      className={({ isActive }) =>
+                        isActive ? "text-white" : "transition hover:text-white"
+                      }
+                    >
+                      Showtimes
+                    </NavLink>
+                  </>
                 )}
 
                 <NavLink

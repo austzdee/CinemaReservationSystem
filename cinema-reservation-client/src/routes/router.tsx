@@ -8,6 +8,7 @@ import HomePage from "../pages/HomePage";
 import LoginPage from "../pages/LoginPage";
 import MyReservationsPage from "../pages/MyReservationsPage";
 import RegisterPage from "../pages/RegisterPage";
+import AdminShowtimesPage from "../pages/AdminShowtimesPage";
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
           {
             path: "admin/movies",
             element: <AdminMoviesPage />,
+          },
+          {
+            path: "admin/showtimes",
+            element: <AdminShowtimesPage />,
           },
         ],
       },
