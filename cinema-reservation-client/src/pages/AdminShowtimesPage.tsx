@@ -4,12 +4,23 @@ import { useAuth } from "../hooks/useAuth"
 import { getAuditoriums } from "../services/auditoriumService"
 import { getMovies } from "../services/movieService"
 import {
+  cancelShowtime,
   createShowtime,
   getShowtimes,
+  updateShowtime,
 } from "../services/showtimeService"
 import type { AuditoriumSummary } from "../types/auditorium"
 import type { MovieSummary } from "../types/movie"
 import type { Showtime } from "../types/showtime"
+
+function toDateTimeLocalValue(value: string): string {
+  const date = new Date(value)
+  const localDate = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60_000,
+  )
+
+  return localDate.toISOString().slice(0, 16)
+}
 
 export default function AdminShowtimesPage() {
   const { accessToken } = useAuth()
@@ -23,8 +34,15 @@ export default function AdminShowtimesPage() {
   const [startsAt, setStartsAt] = useState("")
   const [ticketPrice, setTicketPrice] = useState("")
 
+  const [editingShowtimeId, setEditingShowtimeId] =
+    useState<number | null>(null)
+
   const [isLoading, setIsLoading] = useState(true)
   const [isCreating, setIsCreating] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [cancellingShowtimeId, setCancellingShowtimeId] =
+    useState<number | null>(null)
+
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -73,7 +91,33 @@ export default function AdminShowtimesPage() {
     }
   }, [])
 
-  async function handleCreateShowtime(event: FormEvent<HTMLFormElement>) {
+  function resetForm() {
+    setMovieId("")
+    setAuditoriumId("")
+    setStartsAt("")
+    setTicketPrice("")
+    setEditingShowtimeId(null)
+  }
+
+  function handleStartEdit(showtime: Showtime) {
+    setEditingShowtimeId(showtime.id)
+    setMovieId(showtime.movieId.toString())
+    setAuditoriumId(showtime.auditoriumId.toString())
+    setStartsAt(toDateTimeLocalValue(showtime.startsAt))
+    setTicketPrice(showtime.ticketPrice.toString())
+    setActionError(null)
+    setSuccessMessage(null)
+  }
+
+  function handleCancelEdit() {
+    resetForm()
+    setActionError(null)
+    setSuccessMessage(null)
+  }
+
+  async function handleSubmitShowtime(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault()
 
     if (!accessToken) {
@@ -96,18 +140,60 @@ export default function AdminShowtimesPage() {
       return
     }
 
-    setIsCreating(true)
+    const request = {
+      movieId: selectedMovieId,
+      auditoriumId: selectedAuditoriumId,
+      startsAt: new Date(startsAt).toISOString(),
+      ticketPrice: price,
+    }
+
     setActionError(null)
     setSuccessMessage(null)
 
+    if (editingShowtimeId !== null) {
+      setIsUpdating(true)
+
+      try {
+        const updatedShowtime = await updateShowtime(
+          editingShowtimeId,
+          request,
+          accessToken,
+        )
+
+        setShowtimes((currentShowtimes) =>
+          currentShowtimes
+            .map((showtime) =>
+              showtime.id === updatedShowtime.id
+                ? updatedShowtime
+                : showtime,
+            )
+            .sort(
+              (a, b) =>
+                new Date(a.startsAt).getTime() -
+                new Date(b.startsAt).getTime(),
+            ),
+        )
+
+        resetForm()
+        setSuccessMessage("Showtime updated successfully.")
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to update showtime.",
+        )
+      } finally {
+        setIsUpdating(false)
+      }
+
+      return
+    }
+
+    setIsCreating(true)
+
     try {
       const createdShowtime = await createShowtime(
-        {
-          movieId: selectedMovieId,
-          auditoriumId: selectedAuditoriumId,
-          startsAt: new Date(startsAt).toISOString(),
-          ticketPrice: price,
-        },
+        request,
         accessToken,
       )
 
@@ -119,10 +205,7 @@ export default function AdminShowtimesPage() {
         ),
       )
 
-      setMovieId("")
-      setAuditoriumId("")
-      setStartsAt("")
-      setTicketPrice("")
+      resetForm()
       setSuccessMessage("Showtime created successfully.")
     } catch (error) {
       setActionError(
@@ -132,6 +215,50 @@ export default function AdminShowtimesPage() {
       )
     } finally {
       setIsCreating(false)
+    }
+  }
+
+  async function handleCancelShowtime(showtime: Showtime) {
+    if (!accessToken) {
+      setActionError("Your admin session is no longer available.")
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Cancel the ${showtime.movieTitle} showtime?`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setCancellingShowtimeId(showtime.id)
+    setActionError(null)
+    setSuccessMessage(null)
+
+    try {
+      await cancelShowtime(showtime.id, accessToken)
+
+      setShowtimes((currentShowtimes) =>
+        currentShowtimes.filter(
+          (currentShowtime) =>
+            currentShowtime.id !== showtime.id,
+        ),
+      )
+
+      if (editingShowtimeId === showtime.id) {
+        resetForm()
+      }
+
+      setSuccessMessage("Showtime cancelled successfully.")
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to cancel showtime.",
+      )
+    } finally {
+      setCancellingShowtimeId(null)
     }
   }
 
@@ -196,11 +323,13 @@ export default function AdminShowtimesPage() {
 
           <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-6">
             <h2 className="text-lg font-semibold">
-              Create showtime
+              {editingShowtimeId !== null
+                ? "Edit showtime"
+                : "Create showtime"}
             </h2>
 
             <form
-              onSubmit={handleCreateShowtime}
+              onSubmit={handleSubmitShowtime}
               className="mt-5 grid gap-4 md:grid-cols-2"
             >
               <label className="text-sm text-slate-300">
@@ -280,19 +409,37 @@ export default function AdminShowtimesPage() {
                   </p>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={
-                    isCreating ||
-                    movies.length === 0 ||
-                    auditoriums.length === 0
-                  }
-                  className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isCreating
-                    ? "Creating..."
-                    : "Create showtime"}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={
+                      isCreating ||
+                      isUpdating ||
+                      movies.length === 0 ||
+                      auditoriums.length === 0
+                    }
+                    className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isUpdating
+                      ? "Saving..."
+                      : isCreating
+                        ? "Creating..."
+                        : editingShowtimeId !== null
+                          ? "Save changes"
+                          : "Create showtime"}
+                  </button>
+
+                  {editingShowtimeId !== null && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      disabled={isUpdating}
+                      className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-slate-600 hover:text-white disabled:opacity-50"
+                    >
+                      Cancel edit
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </section>
@@ -311,6 +458,7 @@ export default function AdminShowtimesPage() {
                     <th className="px-4 py-3 font-medium">Starts</th>
                     <th className="px-4 py-3 font-medium">Ends</th>
                     <th className="px-4 py-3 font-medium">Price</th>
+                    <th className="px-4 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
 
@@ -335,6 +483,33 @@ export default function AdminShowtimesPage() {
 
                       <td className="px-4 py-3 text-slate-300">
                         £{showtime.ticketPrice.toFixed(2)}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(showtime)}
+                            className="text-sky-400 transition hover:text-sky-300"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleCancelShowtime(showtime)
+                            }
+                            disabled={
+                              cancellingShowtimeId === showtime.id
+                            }
+                            className="text-red-400 transition hover:text-red-300 disabled:opacity-50"
+                          >
+                            {cancellingShowtimeId === showtime.id
+                              ? "Cancelling..."
+                              : "Cancel"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
