@@ -7,6 +7,7 @@ import {
   cancelShowtime,
   createShowtime,
   getShowtimes,
+  ShowtimeApiError,
   updateShowtime,
 } from "../services/showtimeService"
 import type { AuditoriumSummary } from "../types/auditorium"
@@ -23,7 +24,7 @@ function toDateTimeLocalValue(value: string): string {
 }
 
 export default function AdminShowtimesPage() {
-  const { accessToken } = useAuth()
+  const { accessToken, logout } = useAuth()
 
   const [showtimes, setShowtimes] = useState<Showtime[]>([])
   const [movies, setMovies] = useState<MovieSummary[]>([])
@@ -129,10 +130,20 @@ export default function AdminShowtimesPage() {
     const selectedAuditoriumId = Number(auditoriumId)
     const price = Number(ticketPrice)
 
+    const selectedStart = new Date(startsAt)
+
+    if (
+      !startsAt ||
+      Number.isNaN(selectedStart.getTime()) ||
+      selectedStart <= new Date()
+    ) {
+      setActionError("Showtime must start in the future.")
+      return
+    }
+
     if (
       !selectedMovieId ||
       !selectedAuditoriumId ||
-      !startsAt ||
       !Number.isFinite(price) ||
       price <= 0
     ) {
@@ -177,6 +188,11 @@ export default function AdminShowtimesPage() {
         resetForm()
         setSuccessMessage("Showtime updated successfully.")
       } catch (error) {
+        if (error instanceof ShowtimeApiError && error.status === 401) {
+          logout()
+          return
+        }
+
         setActionError(
           error instanceof Error
             ? error.message
@@ -208,6 +224,11 @@ export default function AdminShowtimesPage() {
       resetForm()
       setSuccessMessage("Showtime created successfully.")
     } catch (error) {
+      if (error instanceof ShowtimeApiError && error.status === 401) {
+        logout()
+        return
+      }
+
       setActionError(
         error instanceof Error
           ? error.message
@@ -252,6 +273,11 @@ export default function AdminShowtimesPage() {
 
       setSuccessMessage("Showtime cancelled successfully.")
     } catch (error) {
+      if (error instanceof ShowtimeApiError && error.status === 401) {
+        logout()
+        return
+      }
+
       setActionError(
         error instanceof Error
           ? error.message
@@ -375,6 +401,7 @@ export default function AdminShowtimesPage() {
                 <input
                   type="datetime-local"
                   value={startsAt}
+                  min={toDateTimeLocalValue(new Date().toISOString())}
                   onChange={(event) => setStartsAt(event.target.value)}
                   required
                   className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"

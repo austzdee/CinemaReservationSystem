@@ -7,6 +7,17 @@ import type {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5084"
 
+export class ShowtimeApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+
+    this.name = "ShowtimeApiError"
+    this.status = status
+  }
+}
+
 export interface GetShowtimesOptions {
   startsFrom?: string
   startsTo?: string
@@ -117,11 +128,12 @@ export async function createShowtime(
   )
 
   if (!response.ok) {
-    throw new Error(
+    throw new ShowtimeApiError(
       await getApiErrorMessage(
         response,
         `Unable to create showtime. Status: ${response.status}.`,
       ),
+      response.status,
     )
   }
 
@@ -146,11 +158,12 @@ export async function updateShowtime(
   )
 
   if (!response.ok) {
-    throw new Error(
+    throw new ShowtimeApiError(
       await getApiErrorMessage(
         response,
         `Unable to update showtime. Status: ${response.status}.`,
       ),
+      response.status,
     )
   }
 
@@ -172,11 +185,12 @@ export async function cancelShowtime(
   )
 
   if (!response.ok) {
-    throw new Error(
+    throw new ShowtimeApiError(
       await getApiErrorMessage(
         response,
         `Unable to cancel showtime. Status: ${response.status}.`,
       ),
+      response.status,
     )
   }
 }
