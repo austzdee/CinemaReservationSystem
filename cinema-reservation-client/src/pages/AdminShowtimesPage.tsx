@@ -35,6 +35,11 @@ export default function AdminShowtimesPage() {
   const [startsAt, setStartsAt] = useState("")
   const [ticketPrice, setTicketPrice] = useState("")
 
+  const [filterMovieId, setFilterMovieId] = useState("")
+  const [filterAuditoriumId, setFilterAuditoriumId] = useState("")
+  const [filterStartsFrom, setFilterStartsFrom] = useState("")
+  const [filterStartsTo, setFilterStartsTo] = useState("")
+
   const [editingShowtimeId, setEditingShowtimeId] =
     useState<number | null>(null)
 
@@ -45,6 +50,7 @@ export default function AdminShowtimesPage() {
     useState<number | null>(null)
 
   const [error, setError] = useState<string | null>(null)
+  const [filterError, setFilterError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -52,10 +58,36 @@ export default function AdminShowtimesPage() {
     const controller = new AbortController()
 
     async function loadData() {
+      setIsLoading(true)
+      setError(null)
+      setFilterError(null)
+
+      if (
+        filterStartsFrom &&
+        filterStartsTo &&
+        new Date(filterStartsFrom) >= new Date(filterStartsTo)
+      ) {
+        setFilterError("Starts from must be earlier than starts to.")
+        setIsLoading(false)
+        return
+      }
+
       try {
         const [showtimeResult, movieResult, auditoriumResult] =
           await Promise.all([
             getShowtimes({
+              movieId: filterMovieId
+                ? Number(filterMovieId)
+                : undefined,
+              auditoriumId: filterAuditoriumId
+                ? Number(filterAuditoriumId)
+                : undefined,
+              startsFrom: filterStartsFrom
+                ? new Date(filterStartsFrom).toISOString()
+                : undefined,
+              startsTo: filterStartsTo
+                ? new Date(filterStartsTo).toISOString()
+                : undefined,
               signal: controller.signal,
             }),
             getMovies({
@@ -90,7 +122,12 @@ export default function AdminShowtimesPage() {
     return () => {
       controller.abort()
     }
-  }, [])
+  }, [
+    filterMovieId,
+    filterAuditoriumId,
+    filterStartsFrom,
+    filterStartsTo,
+  ])
 
   function resetForm() {
     setMovieId("")
@@ -346,6 +383,78 @@ export default function AdminShowtimesPage() {
               </p>
             </div>
           </div>
+
+          <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-6">
+            <h2 className="text-lg font-semibold">Filter showtimes</h2>
+
+            {filterError && (
+              <p className="mt-3 text-sm text-red-300">
+                {filterError}
+              </p>
+            )}
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="text-sm text-slate-300">
+                Movie
+                <select
+                  value={filterMovieId}
+                  onChange={(event) => setFilterMovieId(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                >
+                  <option value="">All movies</option>
+
+                  {movies.map((movie) => (
+                    <option key={movie.id} value={movie.id}>
+                      {movie.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Auditorium
+                <select
+                  value={filterAuditoriumId}
+                  onChange={(event) =>
+                    setFilterAuditoriumId(event.target.value)
+                  }
+                  className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                >
+                  <option value="">All auditoriums</option>
+
+                  {auditoriums.map((auditorium) => (
+                    <option key={auditorium.id} value={auditorium.id}>
+                      {auditorium.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Starts from
+                <input
+                  type="datetime-local"
+                  value={filterStartsFrom}
+                  onChange={(event) =>
+                    setFilterStartsFrom(event.target.value)
+                  }
+                  className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                />
+              </label>
+
+              <label className="text-sm text-slate-300">
+                Starts to
+                <input
+                  type="datetime-local"
+                  value={filterStartsTo}
+                  onChange={(event) =>
+                    setFilterStartsTo(event.target.value)
+                  }
+                  className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                />
+              </label>
+            </div>
+          </section>
 
           <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-6">
             <h2 className="text-lg font-semibold">
