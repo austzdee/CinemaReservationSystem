@@ -5,6 +5,7 @@ import ProtectedRoute from "../components/ProtectedRoute";
 import AppLayout from "../layouts/AppLayout";
 import AdminMoviesPage from "../pages/AdminMoviesPage";
 import HomePage from "../pages/HomePage";
+import MovieShowtimesPage from "../pages/MovieShowtimesPage";
 import LoginPage from "../pages/LoginPage";
 import MyReservationsPage from "../pages/MyReservationsPage";
 import RegisterPage from "../pages/RegisterPage";
@@ -18,6 +19,10 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <HomePage />,
+      },
+      {
+        path: "movies/:movieId/showtimes",
+        element: <MovieShowtimesPage />,
       },
       {
         path: "login",
