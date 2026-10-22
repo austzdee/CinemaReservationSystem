@@ -39,6 +39,8 @@ export default function AdminShowtimesPage() {
   const [filterAuditoriumId, setFilterAuditoriumId] = useState("")
   const [filterStartsFrom, setFilterStartsFrom] = useState("")
   const [filterStartsTo, setFilterStartsTo] = useState("")
+  const [appliedFilters, setAppliedFilters] = useState({ movieId: "", auditoriumId: "", startsFrom: "", startsTo: "" })
+  const [filterRefreshKey, setFilterRefreshKey] = useState(0)
 
   const [editingShowtimeId, setEditingShowtimeId] =
     useState<number | null>(null)
@@ -60,33 +62,21 @@ export default function AdminShowtimesPage() {
     async function loadData() {
       setIsLoading(true)
       setError(null)
-      setFilterError(null)
-
-      if (
-        filterStartsFrom &&
-        filterStartsTo &&
-        new Date(filterStartsFrom) >= new Date(filterStartsTo)
-      ) {
-        setFilterError("Starts from must be earlier than starts to.")
-        setIsLoading(false)
-        return
-      }
-
       try {
         const [showtimeResult, movieResult, auditoriumResult] =
           await Promise.all([
             getShowtimes({
-              movieId: filterMovieId
-                ? Number(filterMovieId)
+              movieId: appliedFilters.movieId
+                ? Number(appliedFilters.movieId)
                 : undefined,
-              auditoriumId: filterAuditoriumId
-                ? Number(filterAuditoriumId)
+              auditoriumId: appliedFilters.auditoriumId
+                ? Number(appliedFilters.auditoriumId)
                 : undefined,
-              startsFrom: filterStartsFrom
-                ? new Date(filterStartsFrom).toISOString()
+              startsFrom: appliedFilters.startsFrom
+                ? new Date(appliedFilters.startsFrom).toISOString()
                 : undefined,
-              startsTo: filterStartsTo
-                ? new Date(filterStartsTo).toISOString()
+              startsTo: appliedFilters.startsTo
+                ? new Date(appliedFilters.startsTo).toISOString()
                 : undefined,
               signal: controller.signal,
             }),
@@ -122,12 +112,38 @@ export default function AdminShowtimesPage() {
     return () => {
       controller.abort()
     }
-  }, [
-    filterMovieId,
-    filterAuditoriumId,
-    filterStartsFrom,
-    filterStartsTo,
-  ])
+  }, [appliedFilters, filterRefreshKey])
+
+  function handleApplyFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const start = filterStartsFrom ? new Date(filterStartsFrom) : null
+    const end = filterStartsTo ? new Date(filterStartsTo) : null
+    if (
+      (start && Number.isNaN(start.getTime())) ||
+      (end && Number.isNaN(end.getTime())) ||
+      (start && end && start >= end)
+    ) {
+      setFilterError("Enter valid dates; Starts from must be earlier than starts to.")
+      return
+    }
+    setFilterError(null)
+    setAppliedFilters({
+      movieId: filterMovieId,
+      auditoriumId: filterAuditoriumId,
+      startsFrom: filterStartsFrom,
+      startsTo: filterStartsTo,
+    })
+  }
+
+  function handleClearFilters() {
+    setFilterMovieId("")
+    setFilterAuditoriumId("")
+    setFilterStartsFrom("")
+    setFilterStartsTo("")
+    setFilterError(null)
+    setAppliedFilters({ movieId: "", auditoriumId: "", startsFrom: "", startsTo: "" })
+    setFilterRefreshKey((current) => current + 1)
+  }
 
   function resetForm() {
     setMovieId("")
@@ -384,7 +400,7 @@ export default function AdminShowtimesPage() {
             </div>
           </div>
 
-          <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-6">
+          <form onSubmit={handleApplyFilters} className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-6">
             <h2 className="text-lg font-semibold">Filter showtimes</h2>
 
             {filterError && (
@@ -454,7 +470,11 @@ export default function AdminShowtimesPage() {
                 />
               </label>
             </div>
-          </section>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button type="submit" disabled={isLoading} className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-50">Apply filters</button>
+              <button type="button" onClick={handleClearFilters} disabled={isLoading} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:text-white disabled:opacity-50">Clear filters</button>
+            </div>
+          </form>
 
           <section className="mb-8 rounded-lg border border-slate-800 bg-slate-900 p-6">
             <h2 className="text-lg font-semibold">
