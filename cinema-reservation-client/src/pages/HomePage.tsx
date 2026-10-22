@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 
 import { getMovieById, getMovies } from "../services/movieService";
 import type { MovieDetails, MovieSummary } from "../types/movie";
@@ -257,6 +258,12 @@ export default function HomePage() {
                         {movie.genres.map((genre) => genre.name).join(" · ")}
                       </p>
                     )}
+                    <Link
+                      to={`/movies/${movie.id}/showtimes`}
+                      className="mt-5 inline-flex rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400"
+                    >
+                      View showtimes
+                    </Link>
                   </div>
                 </article>
               ))}
